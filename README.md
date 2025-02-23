@@ -1,25 +1,37 @@
-<a name="readme-top"></a>
+# AutoAgent-Windows
 
 <div align="center">
   <img src="./assets/AutoAgent_logo.svg" alt="Logo" width="200">
-  <h1 align="center">AutoAgent: Fully-Automated & Zero-Code</br> LLM Agent Framework </h1>
+  <h1 align="center">AutoAgent-Windows: A Windows-Optimized Fork of</br> the AutoAgent LLM Framework </h1>
 </div>
 
-
-
-
 <div align="center">
-  <a href="https://metachain-ai.github.io"><img src="https://img.shields.io/badge/Project-Page-blue?style=for-the-badge&color=FFE165&logo=homepage&logoColor=white" alt="Credits"></a>
-  <a href="https://join.slack.com/t/metachain-workspace/shared_invite/zt-2zibtmutw-v7xOJObBf9jE2w3x7nctFQ"><img src="https://img.shields.io/badge/Slack-Join%20Us-red?logo=slack&logoColor=white&style=for-the-badge" alt="Join our Slack community"></a>
-  <a href="https://discord.gg/jQJdXyDB"><img src="https://img.shields.io/badge/Discord-Join%20Us-purple?logo=discord&logoColor=white&style=for-the-badge" alt="Join our Discord community"></a>
+  <a href="https://github.com/prestoncn/AutoAgent-Windows"><img src="https://img.shields.io/badge/Fork-Repository-blue?style=for-the-badge&color=FFE165&logo=github&logoColor=white" alt="Repository"></a>
+  <a href="https://github.com/HKUDS/AutoAgent"><img src="https://img.shields.io/badge/Original-Project-red?logo=github&logoColor=white&style=for-the-badge" alt="Original Project"></a>
   <br/>
   <a href="https://metachain-ai.github.io/docs"><img src="https://img.shields.io/badge/Documentation-000?logo=googledocs&logoColor=FFE165&style=for-the-badge" alt="Check out the documentation"></a>
   <a href="https://arxiv.org/abs/2502.05957"><img src="https://img.shields.io/badge/Paper%20on%20Arxiv-000?logoColor=FFE165&logo=arxiv&style=for-the-badge" alt="Paper"></a>
-  <a href="https://gaia-benchmark-leaderboard.hf.space/"><img src="https://img.shields.io/badge/GAIA%20Benchmark-000?logoColor=FFE165&logo=huggingface&style=for-the-badge" alt="Evaluation Benchmark Score"></a>
   <hr>
 </div>
 
-Welcome to AutoAgent! AutoAgent is a **Fully-Automated** and highly **Self-Developing** framework that enables users to create and deploy LLM agents through **Natural Language Alone**. 
+Welcome to AutoAgent-Windows! This is a Windows-optimized fork of the incredible [AutoAgent framework](https://github.com/HKUDS/AutoAgent). While AutoAgent is a fantastic framework for creating and deploying LLM agents through natural language, some users (including myself) encountered Windows compatibility issues. This fork aims to provide a smooth, Windows-first experience while maintaining all the powerful features of the original framework.
+
+## 🔄 What's Different in this Fork?
+
+* 🪟 **Windows-First Development**: Optimized for Windows environments with proper path handling and PowerShell compatibility
+* 🛠️ **Simplified Setup**: Streamlined installation process for Windows users
+* 🐛 **Bug Fixes**: Resolved various Windows-specific issues from the original framework
+* 🔧 **Native Tools**: Adapted tool implementations to work seamlessly on Windows
+* 💻 **PowerShell Integration**: Better command execution through PowerShell
+
+## ✨ Original Features Maintained
+
+* 🏆 Top Performer on the GAIA Benchmark
+* 📚 Agentic-RAG with Native Self-Managing Vector Database
+* ✨ Agent and Workflow Creation with Ease
+* 🌐 Universal LLM Support
+* 🔀 Flexible Interaction 
+* 🤖 Dynamic, Extensible, Lightweight
 
 ## ✨Key Features
 
@@ -202,17 +214,15 @@ You can also create the agent workflows using natural language description with 
 
 ### Installation
 
-#### AutoAgent Installation
-
-```bash
-git clone https://github.com/HKUDS/AutoAgent.git
-cd AutoAgent
+```powershell
+git clone https://github.com/prestoncn/AutoAgent-Windows.git
+cd AutoAgent-Windows
 pip install -e .
 ```
 
-#### Docker Installation
+### Docker Setup on Windows
 
-We use Docker to containerize the agent-interactive environment. So please install [Docker](https://www.docker.com/) first. You don't need to manually pull the pre-built image, because we have let Auto-Deep-Research **automatically pull the pre-built image based on your architecture of your machine**.
+We use Docker Desktop for Windows to containerize the agent-interactive environment. Please install [Docker Desktop](https://www.docker.com/products/docker-desktop) first.
 
 <span id='api-keys-setup'/>
 
@@ -482,7 +492,9 @@ We want to build a community for AutoAgent, and we welcome everyone to join us. 
 
 <span id='acknowledgements'/>
 
-## 🙏 Acknowledgements
+## �� Acknowledgements
+
+This project is a fork of the excellent [AutoAgent framework](https://github.com/HKUDS/AutoAgent) by HKUDS. We are deeply grateful for their groundbreaking work that made this Windows-optimized version possible. All credit for the original architecture and design goes to the AutoAgent team.
 
 Rome wasn't built in a day. AutoAgent stands on the shoulders of giants, and we are deeply grateful for the outstanding work that came before us. Our framework architecture draws inspiration from [OpenAI Swarm](https://github.com/openai/swarm), while our user mode's three-agent design benefits from [Magentic-one](https://github.com/microsoft/autogen/tree/main/python/packages/autogen-magentic-one)'s insights. We've also learned from [OpenHands](https://github.com/All-Hands-AI/OpenHands) for documentation structure and many other excellent projects for agent-environment interaction design, among others. We express our sincere gratitude and respect to all these pioneering works that have been instrumental in shaping AutoAgent.
 
@@ -490,6 +502,8 @@ Rome wasn't built in a day. AutoAgent stands on the shoulders of giants, and we 
 <span id='cite'/>
 
 ## 🌟 Cite
+
+Please cite both this fork and the original AutoAgent project:
 
 ```tex
 @misc{AutoAgent,
@@ -500,6 +514,16 @@ Rome wasn't built in a day. AutoAgent stands on the shoulders of giants, and we 
       archivePrefix={arXiv},
       primaryClass={cs.AI},
       url={https://arxiv.org/abs/2502.05957},
+}
+```
+
+For this Windows-optimized fork:
+```tex
+@misc{AutoAgentWindows,
+      title={{AutoAgent-Windows: A Windows-Optimized Fork of the AutoAgent Framework}},
+      author={Preston Nico},
+      year={2024},
+      url={https://github.com/prestoncn/AutoAgent-Windows},
 }
 ```
 
