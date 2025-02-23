@@ -271,136 +271,103 @@ In the `agent editor` and `workflow editor` mode, we should clone a mirror of th
 
 Then I will show you how to use the full part of AutoAgent with the `auto main` command and different LLM providers. If you want to use the `auto deep-research` command, you can refer to the [Auto-Deep-Research](https://github.com/HKUDS/Auto-Deep-Research) project for more details.
 
-##### Anthropic
+### Using AutoAgent with Different LLM Providers
 
-* set the `ANTHROPIC_API_KEY` in the `.env` file.
+Below are instructions for using different LLM providers with AutoAgent-Windows. All commands are PowerShell-compatible.
 
-```bash
+#### Anthropic (Default)
+1. Add to your `.env` file:
+```powershell
 ANTHROPIC_API_KEY=your_anthropic_api_key
 ```
-
-* run the following command to start Auto-Deep-Research.
-
-```bash
-auto main # default model is claude-3-5-sonnet-20241022
+2. Run AutoAgent:
+```powershell
+auto main # Uses default model claude-3-5-sonnet-20241022
 ```
 
-##### OpenAI
-
-* set the `OPENAI_API_KEY` in the `.env` file.
-
-```bash
+#### OpenAI
+1. Add to your `.env` file:
+```powershell
 OPENAI_API_KEY=your_openai_api_key
 ```
-
-* run the following command to start Auto-Deep-Research.
-
-```bash
-COMPLETION_MODEL=gpt-4o auto main
+2. Run AutoAgent:
+```powershell
+$env:COMPLETION_MODEL="gpt-4o"; auto main
 ```
 
-##### Mistral
-
-* set the `MISTRAL_API_KEY` in the `.env` file.
-
-```bash
+#### Mistral
+1. Add to your `.env` file:
+```powershell
 MISTRAL_API_KEY=your_mistral_api_key
 ```
-
-* run the following command to start Auto-Deep-Research.
-
-```bash
-COMPLETION_MODEL=mistral/mistral-large-2407 auto main
+2. Run AutoAgent:
+```powershell
+$env:COMPLETION_MODEL="mistral/mistral-large-2407"; auto main
 ```
 
-##### Gemini - Google AI Studio
-
-* set the `GEMINI_API_KEY` in the `.env` file.
-
-```bash
+#### Gemini - Google AI Studio
+1. Add to your `.env` file:
+```powershell
 GEMINI_API_KEY=your_gemini_api_key
 ```
-
-* run the following command to start Auto-Deep-Research.
-
-```bash
-COMPLETION_MODEL=gemini/gemini-2.0-flash auto main
+2. Run AutoAgent:
+```powershell
+$env:COMPLETION_MODEL="gemini/gemini-2.0-flash"; auto main
 ```
 
-##### Huggingface
-
-* set the `HUGGINGFACE_API_KEY` in the `.env` file.
-
-```bash
+#### Huggingface
+1. Add to your `.env` file:
+```powershell
 HUGGINGFACE_API_KEY=your_huggingface_api_key
 ```
-
-* run the following command to start Auto-Deep-Research.
-
-```bash
-COMPLETION_MODEL=huggingface/meta-llama/Llama-3.3-70B-Instruct auto main
+2. Run AutoAgent:
+```powershell
+$env:COMPLETION_MODEL="huggingface/meta-llama/Llama-3.3-70B-Instruct"; auto main
 ```
 
-##### Groq
-
-* set the `GROQ_API_KEY` in the `.env` file.
-
-```bash
+#### Groq
+1. Add to your `.env` file:
+```powershell
 GROQ_API_KEY=your_groq_api_key
 ```
-
-* run the following command to start Auto-Deep-Research.
-
-```bash
-COMPLETION_MODEL=groq/deepseek-r1-distill-llama-70b auto main
+2. Run AutoAgent:
+```powershell
+$env:COMPLETION_MODEL="groq/deepseek-r1-distill-llama-70b"; auto main
 ```
 
-##### OpenAI-Compatible Endpoints (e.g., Grok)
-
-* set the `OPENAI_API_KEY` in the `.env` file.
-
-```bash
+#### OpenAI-Compatible Endpoints (e.g., Grok)
+1. Add to your `.env` file:
+```powershell
 OPENAI_API_KEY=your_api_key_for_openai_compatible_endpoints
 ```
-
-* run the following command to start Auto-Deep-Research.
-
-```bash
-COMPLETION_MODEL=openai/grok-2-latest API_BASE_URL=https://api.x.ai/v1 auto main
+2. Run AutoAgent:
+```powershell
+$env:COMPLETION_MODEL="openai/grok-2-latest"; $env:API_BASE_URL="https://api.x.ai/v1"; auto main
 ```
 
-##### OpenRouter (e.g., DeepSeek-R1)
+#### OpenRouter (Recommended for DeepSeek-R1)
+We recommend using OpenRouter for DeepSeek-R1 access due to better API reliability.
 
-We recommend using OpenRouter as LLM provider of DeepSeek-R1 temporarily. Because official API of DeepSeek-R1 can not be used efficiently.
-
-* set the `OPENROUTER_API_KEY` in the `.env` file.
-
-```bash
+1. Add to your `.env` file:
+```powershell
 OPENROUTER_API_KEY=your_openrouter_api_key
 ```
-
-* run the following command to start Auto-Deep-Research.
-
-```bash
-COMPLETION_MODEL=openrouter/deepseek/deepseek-r1 auto main
+2. Run AutoAgent:
+```powershell
+$env:COMPLETION_MODEL="openrouter/deepseek/deepseek-r1"; auto main
 ```
 
-##### DeepSeek
-
-* set the `DEEPSEEK_API_KEY` in the `.env` file.
-
-```bash
+#### DeepSeek
+1. Add to your `.env` file:
+```powershell
 DEEPSEEK_API_KEY=your_deepseek_api_key
 ```
-
-* run the following command to start Auto-Deep-Research.
-
-```bash
-COMPLETION_MODEL=deepseek/deepseek-chat auto main
+2. Run AutoAgent:
+```powershell
+$env:COMPLETION_MODEL="deepseek/deepseek-chat"; auto main
 ```
 
-
-After the CLI mode is started, you can see the start page of AutoAgent: 
+After running any of these commands, you'll see the AutoAgent start page:
 
 <div align="center">
   <!-- <img src="./assets/AutoAgentnew-intro.pdf" alt="Logo" width="100%"> -->
@@ -492,7 +459,7 @@ We want to build a community for AutoAgent, and we welcome everyone to join us. 
 
 <span id='acknowledgements'/>
 
-## �� Acknowledgements
+## 🙏 Acknowledgements
 
 This project is a fork of the excellent [AutoAgent framework](https://github.com/HKUDS/AutoAgent) by HKUDS. We are deeply grateful for their groundbreaking work that made this Windows-optimized version possible. All credit for the original architecture and design goes to the AutoAgent team.
 
