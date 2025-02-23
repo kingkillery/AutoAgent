@@ -811,7 +811,6 @@ def convert_from_multiple_tool_calls_to_single_tool_call_messages(
     return converted_messages
 
 
-
 def convert_fn_messages_to_non_fn_messages(messages: list[dict]) -> list[dict]:
     """Convert function calling messages back to non-function calling messages."""
     new_messages = []
@@ -822,9 +821,12 @@ def convert_fn_messages_to_non_fn_messages(messages: list[dict]) -> list[dict]:
 I have executed the tool {message["name"]} and the result is {message["content"]}.
 """
         elif message["role"] == "assistant":
-            msg_content = message["content"] + f"""
+            if "tool_calls" in message and message["tool_calls"]:
+                msg_content = message["content"] + f"""
 I want to use the tool named {message["tool_calls"][0]["function"]["name"]}, with the following arguments: {message["tool_calls"][0]["function"]["arguments"]}.
 """
+            else:
+                msg_content = message["content"]
             new_messages.append({"role": message["role"], "content": msg_content}.copy())
         else:
             new_messages.append(message.copy())
