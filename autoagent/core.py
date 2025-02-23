@@ -48,7 +48,13 @@ def should_retry_error(exception):
         "eof occurred" in error_msg,
         "timeout" in error_msg,
         "event loop is closed" in error_msg,  # handle event-loop issues
-        "anthropicexception" in error_msg     # handle Anthropic-related errors
+        "anthropicexception" in error_msg,    # handle Anthropic-related errors
+        "openrouterexception" in error_msg,   # handle OpenRouter-specific errors
+        "bad request" in error_msg,           # handle 400 errors that may be temporary
+        "too many requests" in error_msg,     # explicitly handle rate limiting
+        "service unavailable" in error_msg,   # handle 503 errors
+        "gateway timeout" in error_msg,       # handle 504 errors
+        "internal server error" in error_msg  # handle 500 errors
     ])
 
 __CTX_VARS_NAME__ = "context_variables"
@@ -101,88 +107,159 @@ class MetaChain:
             if __CTX_VARS_NAME__ in params["required"]:
                 params["required"].remove(__CTX_VARS_NAME__)
 
-        if FN_CALL:
-            create_model = model_override or agent.model
-            assert litellm.supports_function_calling(model=create_model) == True, (
-                f"Model {create_model} does not support function calling, please set `FN_CALL=False` to use non-function calling mode"
-            )
-            create_params = {
-                "model": create_model,
-                "messages": messages,
-                "tools": tools or None,
-                "tool_choice": agent.tool_choice,
-                "stream": stream,
-            }
+        try:
+            if FN_CALL:
+                create_model = model_override or agent.model
+                assert litellm.supports_function_calling(model=create_model) == True, (
+                    f"Model {create_model} does not support function calling, please set `FN_CALL=False` to use non-function calling mode"
+                )
+                create_params = {
+                    "model": create_model,
+                    "messages": messages,
+                    "tools": tools or None,
+                    "tool_choice": agent.tool_choice,
+                    "stream": stream,
+                }
 
-            NO_SENDER_MODE = False
-            for not_sender_model in NOT_SUPPORT_SENDER:
-                if not_sender_model in create_model:
-                    NO_SENDER_MODE = True
-                    break
+                NO_SENDER_MODE = False
+                for not_sender_model in NOT_SUPPORT_SENDER:
+                    if not_sender_model in create_model:
+                        NO_SENDER_MODE = True
+                        break
 
-            if NO_SENDER_MODE:
-                messages = create_params["messages"]
-                for message in messages:
-                    if 'sender' in message:
-                        del message['sender']
-                create_params["messages"] = messages
+                if NO_SENDER_MODE:
+                    messages = create_params["messages"]
+                    for message in messages:
+                        if 'sender' in message:
+                            del message['sender']
+                    create_params["messages"] = messages
 
-            if tools and create_params["model"].startswith("gpt"):
-                create_params["parallel_tool_calls"] = agent.parallel_tool_calls
+                if tools and create_params["model"].startswith("gpt"):
+                    create_params["parallel_tool_calls"] = agent.parallel_tool_calls
 
-            completion_response = completion(**create_params)
+                # Add OpenRouter configuration if using an OpenRouter model
+                if "openrouter/" in create_model or create_model.startswith("google/"):
+                    create_params.update({
+                        "base_url": "https://openrouter.ai/api/v1",
+                        "headers": {
+                            "HTTP-Referer": "https://github.com/prestoncn/AutoAgent",
+                            "X-Title": "AutoAgent"
+                        }
+                    })
+                else:
+                    create_params["base_url"] = API_BASE_URL
 
-        else:
-            create_model = model_override or agent.model
-            assert agent.tool_choice == "required", (
-                f"Non-function calling mode MUST use tool_choice = 'required' rather than {agent.tool_choice}"
-            )
-            last_content = messages[-1]["content"]
-            tools_description = convert_tools_to_description(tools)
-            messages[-1]["content"] = (
-                last_content
-                + "\n[IMPORTANT] You MUST use the tools provided to complete the task.\n"
-                + SYSTEM_PROMPT_SUFFIX_TEMPLATE.format(description=tools_description)
-            )
+                completion_response = completion(**create_params)
 
-            NO_SENDER_MODE = False
-            for not_sender_model in NOT_SUPPORT_SENDER:
-                if not_sender_model in create_model:
-                    NO_SENDER_MODE = True
-                    break
+            else:
+                create_model = model_override or agent.model
+                assert agent.tool_choice == "required", (
+                    f"Non-function calling mode MUST use tool_choice = 'required' rather than {agent.tool_choice}"
+                )
+                last_content = messages[-1]["content"]
+                tools_description = convert_tools_to_description(tools)
+                messages[-1]["content"] = (
+                    last_content
+                    + "\n[IMPORTANT] You MUST use the tools provided to complete the task.\n"
+                    + SYSTEM_PROMPT_SUFFIX_TEMPLATE.format(description=tools_description)
+                )
 
-            if NO_SENDER_MODE:
-                for message in messages:
-                    if 'sender' in message:
-                        del message['sender']
+                NO_SENDER_MODE = False
+                for not_sender_model in NOT_SUPPORT_SENDER:
+                    if not_sender_model in create_model:
+                        NO_SENDER_MODE = True
+                        break
 
-            if NON_FN_CALL:
-                messages = convert_fn_messages_to_non_fn_messages(messages)
-            if ADD_USER and messages[-1]["role"] != "user":
-                messages = interleave_user_into_messages(messages)
+                if NO_SENDER_MODE:
+                    for message in messages:
+                        if 'sender' in message:
+                            del message['sender']
 
-            create_params = {
-                "model": create_model,
-                "messages": messages,
-                "stream": stream,
-                "base_url": API_BASE_URL,
-            }
-            completion_response = completion(**create_params)
+                if NON_FN_CALL:
+                    messages = convert_fn_messages_to_non_fn_messages(messages)
+                if ADD_USER and messages[-1]["role"] != "user":
+                    messages = interleave_user_into_messages(messages)
 
-            last_message = [
-                {"role": "assistant", "content": completion_response.choices[0].message.content}
-            ]
-            converted_message = convert_non_fncall_messages_to_fncall_messages(last_message, tools)
-            # Use .get("tool_calls", []) to avoid KeyError
-            converted_tool_calls = [
-                ChatCompletionMessageToolCall(**tool_call)
-                for tool_call in converted_message[0].get("tool_calls", [])
-            ]
-            completion_response.choices[0].message = litellmMessage(
-                content=converted_message[0]["content"],
-                role="assistant",
-                tool_calls=converted_tool_calls
-            )
+                create_params = {
+                    "model": create_model,
+                    "messages": messages,
+                    "stream": stream,
+                }
+
+                # Add OpenRouter configuration if using an OpenRouter model
+                if "openrouter/" in create_model or create_model.startswith("google/"):
+                    create_params.update({
+                        "base_url": "https://openrouter.ai/api/v1",
+                        "headers": {
+                            "HTTP-Referer": "https://github.com/prestoncn/AutoAgent",
+                            "X-Title": "AutoAgent"
+                        }
+                    })
+                else:
+                    create_params["base_url"] = API_BASE_URL
+
+                completion_response = completion(**create_params)
+
+                last_message = [
+                    {"role": "assistant", "content": completion_response.choices[0].message.content}
+                ]
+                converted_message = convert_non_fncall_messages_to_fncall_messages(last_message, tools)
+                # Use .get("tool_calls", []) to avoid KeyError
+                converted_tool_calls = [
+                    ChatCompletionMessageToolCall(**tool_call)
+                    for tool_call in converted_message[0].get("tool_calls", [])
+                ]
+                completion_response.choices[0].message = litellmMessage(
+                    content=converted_message[0]["content"],
+                    role="assistant",
+                    tool_calls=converted_tool_calls
+                )
+
+        except Exception as e:
+            error_msg = str(e).lower()
+            if any(err in error_msg for err in ["openrouterexception", "bad request", "service unavailable"]):
+                # First try the thinking model on OpenRouter
+                self.logger.info("Primary provider failed, trying thinking model on OpenRouter...", title="MODEL UPGRADE", color="yellow")
+                try:
+                    thinking_params = {
+                        "model": "google/gemini-2.0-flash-thinking-exp:free",
+                        "messages": messages,
+                        "stream": stream,
+                    }
+                    completion_response = completion(**thinking_params)
+                    return completion_response
+                except Exception as thinking_e:
+                    # If OpenRouter thinking model fails, fall back to Google AI Studio
+                    self.logger.info("OpenRouter thinking model failed, falling back to Google AI Studio...", title="FAILOVER", color="yellow")
+                    try:
+                        backup_params = {
+                            "model": "gemini-2.0-flash-thinking-exp-01-21",
+                            "messages": messages,
+                            "stream": stream,
+                        }
+                        completion_response = completion(**backup_params)
+                        return completion_response
+                    except Exception as backup_e:
+                        # Try o3-mini as final fallback
+                        self.logger.info("Google AI Studio failed, trying o3-mini via OpenRouter...", title="FINAL FALLBACK", color="yellow")
+                        try:
+                            final_params = {
+                                "model": "openai/o3-mini",
+                                "messages": messages,
+                                "stream": stream,
+                                "base_url": "https://openrouter.ai/api/v1",
+                                "headers": {
+                                    "HTTP-Referer": "https://github.com/prestoncn/AutoAgent",
+                                    "X-Title": "AutoAgent"
+                                }
+                            }
+                            completion_response = completion(**final_params)
+                            return completion_response
+                        except Exception as final_e:
+                            self.logger.info(f"All providers failed. Last error: {final_e}", title="BACKUP ERROR", color="red")
+                            raise final_e
+            else:
+                raise e
 
         return completion_response
 
@@ -509,83 +586,154 @@ class MetaChain:
             if __CTX_VARS_NAME__ in params["required"]:
                 params["required"].remove(__CTX_VARS_NAME__)
 
-        if FN_CALL:
-            create_model = model_override or agent.model
-            assert litellm.supports_function_calling(model=create_model) == True, (
-                f"Model {create_model} does not support function calling, please set `FN_CALL=False` to use non-function calling mode"
-            )
+        try:
+            if FN_CALL:
+                create_model = model_override or agent.model
+                assert litellm.supports_function_calling(model=create_model) == True, (
+                    f"Model {create_model} does not support function calling, please set `FN_CALL=False` to use non-function calling mode"
+                )
 
-            create_params = {
-                "model": create_model,
-                "messages": messages,
-                "tools": tools or None,
-                "tool_choice": agent.tool_choice,
-                "stream": stream,
-            }
+                create_params = {
+                    "model": create_model,
+                    "messages": messages,
+                    "tools": tools or None,
+                    "tool_choice": agent.tool_choice,
+                    "stream": stream,
+                }
 
-            NO_SENDER_MODE = False
-            for not_sender_model in NOT_SUPPORT_SENDER:
-                if not_sender_model in create_model:
-                    NO_SENDER_MODE = True
-                    break
+                NO_SENDER_MODE = False
+                for not_sender_model in NOT_SUPPORT_SENDER:
+                    if not_sender_model in create_model:
+                        NO_SENDER_MODE = True
+                        break
 
-            if NO_SENDER_MODE:
-                messages = create_params["messages"]
-                for message in messages:
-                    if 'sender' in message:
-                        del message['sender']
-                create_params["messages"] = messages
+                if NO_SENDER_MODE:
+                    messages = create_params["messages"]
+                    for message in messages:
+                        if 'sender' in message:
+                            del message['sender']
+                    create_params["messages"] = messages
 
-            if tools and create_params["model"].startswith("gpt"):
-                create_params["parallel_tool_calls"] = agent.parallel_tool_calls
+                if tools and create_params["model"].startswith("gpt"):
+                    create_params["parallel_tool_calls"] = agent.parallel_tool_calls
 
-            completion_response = await acompletion(**create_params)
+                # Add OpenRouter configuration if using an OpenRouter model
+                if "openrouter/" in create_model or create_model.startswith("google/"):
+                    create_params.update({
+                        "base_url": "https://openrouter.ai/api/v1",
+                        "headers": {
+                            "HTTP-Referer": "https://github.com/prestoncn/AutoAgent",
+                            "X-Title": "AutoAgent"
+                        }
+                    })
+                else:
+                    create_params["base_url"] = API_BASE_URL
 
-        else:
-            create_model = model_override or agent.model
-            assert agent.tool_choice == "required", (
-                f"Non-function calling mode MUST use tool_choice = 'required' rather than {agent.tool_choice}"
-            )
+                completion_response = await acompletion(**create_params)
 
-            last_content = messages[-1]["content"]
-            tools_description = convert_tools_to_description(tools)
-            messages[-1]["content"] = (
-                last_content
-                + "\n[IMPORTANT] You MUST use the tools provided to complete the task.\n"
-                + SYSTEM_PROMPT_SUFFIX_TEMPLATE.format(description=tools_description)
-            )
+            else:
+                create_model = model_override or agent.model
+                assert agent.tool_choice == "required", (
+                    f"Non-function calling mode MUST use tool_choice = 'required' rather than {agent.tool_choice}"
+                )
 
-            NO_SENDER_MODE = False
-            for not_sender_model in NOT_SUPPORT_SENDER:
-                if not_sender_model in create_model:
-                    NO_SENDER_MODE = True
-                    break
+                last_content = messages[-1]["content"]
+                tools_description = convert_tools_to_description(tools)
+                messages[-1]["content"] = (
+                    last_content
+                    + "\n[IMPORTANT] You MUST use the tools provided to complete the task.\n"
+                    + SYSTEM_PROMPT_SUFFIX_TEMPLATE.format(description=tools_description)
+                )
 
-            if NO_SENDER_MODE:
-                for message in messages:
-                    if 'sender' in message:
-                        del message['sender']
+                NO_SENDER_MODE = False
+                for not_sender_model in NOT_SUPPORT_SENDER:
+                    if not_sender_model in create_model:
+                        NO_SENDER_MODE = True
+                        break
 
-            create_params = {
-                "model": create_model,
-                "messages": messages,
-                "stream": stream,
-                "base_url": API_BASE_URL,
-            }
-            completion_response = await acompletion(**create_params)
+                if NO_SENDER_MODE:
+                    for message in messages:
+                        if 'sender' in message:
+                            del message['sender']
 
-            last_message = [{"role": "assistant", "content": completion_response.choices[0].message.content}]
-            converted_message = convert_non_fncall_messages_to_fncall_messages(last_message, tools)
-            # Use .get("tool_calls", []) to avoid KeyError
-            converted_tool_calls = [
-                ChatCompletionMessageToolCall(**tool_call)
-                for tool_call in converted_message[0].get("tool_calls", [])
-            ]
-            completion_response.choices[0].message = litellmMessage(
-                content=converted_message[0]["content"],
-                role="assistant",
-                tool_calls=converted_tool_calls
-            )
+                create_params = {
+                    "model": create_model,
+                    "messages": messages,
+                    "stream": stream,
+                }
+
+                # Add OpenRouter configuration if using an OpenRouter model
+                if "openrouter/" in create_model or create_model.startswith("google/"):
+                    create_params.update({
+                        "base_url": "https://openrouter.ai/api/v1",
+                        "headers": {
+                            "HTTP-Referer": "https://github.com/prestoncn/AutoAgent",
+                            "X-Title": "AutoAgent"
+                        }
+                    })
+                else:
+                    create_params["base_url"] = API_BASE_URL
+
+                completion_response = await acompletion(**create_params)
+
+                last_message = [{"role": "assistant", "content": completion_response.choices[0].message.content}]
+                converted_message = convert_non_fncall_messages_to_fncall_messages(last_message, tools)
+                # Use .get("tool_calls", []) to avoid KeyError
+                converted_tool_calls = [
+                    ChatCompletionMessageToolCall(**tool_call)
+                    for tool_call in converted_message[0].get("tool_calls", [])
+                ]
+                completion_response.choices[0].message = litellmMessage(
+                    content=converted_message[0]["content"],
+                    role="assistant",
+                    tool_calls=converted_tool_calls
+                )
+
+        except Exception as e:
+            error_msg = str(e).lower()
+            if any(err in error_msg for err in ["openrouterexception", "bad request", "service unavailable"]):
+                # First try the thinking model on OpenRouter
+                self.logger.info("Primary provider failed, trying thinking model on OpenRouter...", title="MODEL UPGRADE", color="yellow")
+                try:
+                    thinking_params = {
+                        "model": "google/gemini-2.0-flash-thinking-exp:free",
+                        "messages": messages,
+                        "stream": stream,
+                    }
+                    completion_response = await acompletion(**thinking_params)
+                    return completion_response
+                except Exception as thinking_e:
+                    # If OpenRouter thinking model fails, fall back to Google AI Studio
+                    self.logger.info("OpenRouter thinking model failed, falling back to Google AI Studio...", title="FAILOVER", color="yellow")
+                    try:
+                        backup_params = {
+                            "model": "gemini-2.0-flash-thinking-exp-01-21",
+                            "messages": messages,
+                            "stream": stream,
+                        }
+                        completion_response = await acompletion(**backup_params)
+                        return completion_response
+                    except Exception as backup_e:
+                        # Try o3-mini as final fallback
+                        self.logger.info("Google AI Studio failed, trying o3-mini via OpenRouter...", title="FINAL FALLBACK", color="yellow")
+                        try:
+                            final_params = {
+                                "model": "openai/o3-mini",
+                                "messages": messages,
+                                "stream": stream,
+                                "base_url": "https://openrouter.ai/api/v1",
+                                "headers": {
+                                    "HTTP-Referer": "https://github.com/prestoncn/AutoAgent",
+                                    "X-Title": "AutoAgent"
+                                }
+                            }
+                            completion_response = await acompletion(**final_params)
+                            return completion_response
+                        except Exception as final_e:
+                            self.logger.info(f"All providers failed. Last error: {final_e}", title="BACKUP ERROR", color="red")
+                            raise final_e
+            else:
+                raise e
 
         return completion_response
 

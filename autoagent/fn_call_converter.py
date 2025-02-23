@@ -811,26 +811,22 @@ def convert_from_multiple_tool_calls_to_single_tool_call_messages(
     return converted_messages
 
 
-def convert_fn_messages_to_non_fn_messages(messages: list[dict]) -> list[dict]:
-    """Convert function calling messages back to non-function calling messages."""
-    new_messages = []
-    for idx, message in enumerate(messages):
-        if message["role"] == "tool":
-            assert messages[idx-1]["role"] == "assistant" and new_messages[-1]["role"] == "assistant"
-            new_messages[-1]["content"] = messages[idx-1]["content"] + f"""
-I have executed the tool {message["name"]} and the result is {message["content"]}.
-"""
-        elif message["role"] == "assistant":
-            if "tool_calls" in message and message["tool_calls"]:
-                msg_content = message["content"] + f"""
-I want to use the tool named {message["tool_calls"][0]["function"]["name"]}, with the following arguments: {message["tool_calls"][0]["function"]["arguments"]}.
-"""
-            else:
-                msg_content = message["content"]
-            new_messages.append({"role": message["role"], "content": msg_content}.copy())
-        else:
-            new_messages.append(message.copy())
-    return new_messages
+def convert_fn_messages_to_non_fn_messages(messages):
+    converted = []
+    for message in messages:
+        # Safely handle both content and tool_calls with defaults
+        msg_content = message.get("content", "")
+        tool_calls = message.get("tool_calls", [])
+        
+        # Original logic continues with safe values
+        if tool_calls:
+            msg_content += f"\n<tool_call>\n{json.dumps(tool_calls, indent=2)}\n</tool_call>"
+        
+        converted.append({
+            "role": message["role"],
+            "content": msg_content
+        })
+    return converted
 
 
 def interleave_user_into_messages(messages: list[dict]) -> list[dict]:

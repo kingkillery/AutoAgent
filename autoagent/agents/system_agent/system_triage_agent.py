@@ -27,12 +27,11 @@ There are three agents you can transfer to:
 3. use `transfer_to_coding_agent` to transfer to {coding_agent.name}, it can help you to write code to solve the user's request, especially some complex tasks.
 """
     tool_choice = "required" 
-    tools = [case_resolved, case_not_resolved] if tool_choice == "required" else []
     system_triage_agent = Agent(
         name="System Triage Agent",
         model=model, 
         instructions=instructions,
-        functions=tools,
+        functions=[case_resolved, case_not_resolved],
         tool_choice = tool_choice, 
         parallel_tool_calls = False,
     )

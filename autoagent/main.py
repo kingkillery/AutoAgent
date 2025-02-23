@@ -3,6 +3,7 @@ from typing import List
 from autoagent.logger import MetaChainLogger
 from autoagent.environment.utils import setup_metachain
 from autoagent.environment.docker_env import DockerConfig, DockerEnv
+import asyncio
 
 def case_resolved(result: str):
     """
@@ -36,47 +37,40 @@ async def run_in_client(
     docker_config: DockerConfig = None,
     code_env: DockerConfig = None,
 ):
-    """
-    """
+    """Run the agent in a client with proper error handling and retries"""
     client = MetaChain(log_path=logger)
 
     MAX_RETRY = 3
-    for i in range(MAX_RETRY):
+    retry_count = 0
+    last_error = None
+
+    while retry_count < MAX_RETRY:
         try:
             response: Response = await client.run_async(agent, messages, context_variables, debug=True)
-        except Exception as e:
-            logger.info(f'Exception in main loop: {e}', title='ERROR', color='red')
-            raise e
-        if 'Case resolved' in response.messages[-1]['content']:
+            if 'Case resolved' in response.messages[-1]['content']:
+                return response
+            elif 'Case not resolved' in response.messages[-1]['content']:
+                messages.extend(response.messages)
+                retry_count += 1
+                if retry_count < MAX_RETRY:
+                    logger.info(f'Retrying attempt {retry_count + 1}/{MAX_RETRY}...', title='RETRY', color='yellow')
+                continue
             break
-        elif 'Case not resolved' in response.messages[-1]['content']:
-            messages.extend(response.messages)
-            if meta_agent and (i >= 2):
-                setup_metachain(docker_config.workplace_name, code_env)
-                messages.append({
-                    'role': 'user',
-                    'content': """\
-It seems that the case is not resolved with the existing agent system.
-Help me to solve this problem by running tools in the MetaChain.
-IMPORTANT: You should fully take advantage of existing tools, and if existing tools are not enough, you should develop new tools.
-Use `visual_question_answering` tool for ALL visual tasks (images, videos, visual analysis, including object detection, etc.)
-IMPORTANT: You can not stop with `case_not_resolved` after you try your best to creating new tools.
-IMPORTANT: You should ONLY interact with the environment provided to you AND NEVER ASK FOR HUMAN HELP.
-Please encapsulate your final answer (answer ONLY) within <solution> and </solution>.
-"""
-                })
-                meta_agent.functions.append(case_not_resolved)
-                meta_agent.functions.append(case_resolved)
-                response: Response = await client.run_async(meta_agent, messages, context_variables, debug=True)
-                if 'Case resolved' in response.messages[-1]['content']:
-                    break   
-                else: 
-                    messages.extend(response.messages)
+        except Exception as e:
+            last_error = e
+            logger.info(f'Exception in main loop: {e}', title='ERROR', color='red')
+            retry_count += 1
+            if retry_count < MAX_RETRY:
+                logger.info(f'Retrying attempt {retry_count + 1}/{MAX_RETRY}...', title='RETRY', color='yellow')
+                # Add a small delay before retrying
+                await asyncio.sleep(2 ** retry_count)  # Exponential backoff
+                continue
+            raise e
 
-            messages.append({
-                'role': 'user',
-                'content': 'Please try to resolve the case again. It\'s important for me to resolve the case. Trying again in another way may be helpful.'
-            })
+    if retry_count >= MAX_RETRY:
+        error_msg = f'Failed after {MAX_RETRY} attempts. Last error: {last_error}'
+        logger.info(error_msg, title='MAX RETRIES EXCEEDED', color='red')
+        raise Exception(error_msg)
 
     return response
 

@@ -5,12 +5,19 @@ import json
 from typing import List
 from constant import DEBUG, DEFAULT_LOG, LOG_PATH, MC_MODE
 from pathlib import Path
+import os
 BAR_LENGTH = 60
 class MetaChainLogger:
     def __init__(self, log_path: str):
         self.log_path = log_path
         self.console = Console()
         self.debug = DEBUG
+        
+        # Create log directory if it doesn't exist
+        if self.log_path:
+            log_dir = os.path.dirname(self.log_path)
+            if log_dir and not os.path.exists(log_dir):
+                os.makedirs(log_dir, exist_ok=True)
         
     def _write_log(self, message: str):
         with open(self.log_path, 'a') as f:
