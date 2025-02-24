@@ -1,11 +1,11 @@
 # Standard library imports
 import copy
 import json
+import os
 from collections import defaultdict
 from typing import List, Callable, Union
 from datetime import datetime
 # Local imports
-import os
 from .util import function_to_json, debug_print, merge_chunk, pretty_print_messages
 from .types import (
     Agent,
@@ -33,6 +33,8 @@ import inspect
 from constant import MC_MODE, FN_CALL, API_BASE_URL, NOT_SUPPORT_SENDER, ADD_USER, NON_FN_CALL
 from autoagent.fn_call_converter import convert_tools_to_description, convert_non_fncall_messages_to_fncall_messages, SYSTEM_PROMPT_SUFFIX_TEMPLATE, convert_fn_messages_to_non_fn_messages, interleave_user_into_messages
 from litellm.types.utils import Message as litellmMessage
+
+litellm.set_verbose = True  # Enable detailed logging
 
 def should_retry_error(exception):
     if MC_MODE is False:
@@ -119,6 +121,12 @@ class MetaChain:
                     "tools": tools or None,
                     "tool_choice": agent.tool_choice,
                     "stream": stream,
+                    "base_url": "https://openrouter.ai/api/v1",
+                    "headers": {
+                        "HTTP-Referer": "https://github.com/prestoncn/AutoAgent",
+                        "X-Title": "AutoAgent",
+                        "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}"
+                    }
                 }
 
                 NO_SENDER_MODE = False
@@ -134,20 +142,29 @@ class MetaChain:
                             del message['sender']
                     create_params["messages"] = messages
 
-                if tools and create_params["model"].startswith("gpt"):
+                # Ensure model name doesn't trigger OpenAI detection
+                if "gpt" in create_model.lower() and not create_model.startswith(("openrouter/", "google/")):
+                    create_model = f"openrouter/{create_model}"
+                    create_params["model"] = create_model
+
+                if tools and "gpt" in create_params["model"]:
                     create_params["parallel_tool_calls"] = agent.parallel_tool_calls
 
-                # Add OpenRouter configuration if using an OpenRouter model
-                if "openrouter/" in create_model or create_model.startswith("google/"):
-                    create_params.update({
-                        "base_url": "https://openrouter.ai/api/v1",
-                        "headers": {
-                            "HTTP-Referer": "https://github.com/prestoncn/AutoAgent",
-                            "X-Title": "AutoAgent"
-                        }
-                    })
+                # Use OpenRouter or Google AI Studio based on model prefix
+                if create_model.startswith("google/"):
+                    create_params["base_url"] = "https://generativelanguage.googleapis.com/v1beta/models"  # Remove trailing slash
+                    create_params["headers"] = {
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {os.getenv('GOOGLE_API_KEY')}"
+                    }
                 else:
-                    create_params["base_url"] = API_BASE_URL
+                    # Default to OpenRouter for all other models
+                    create_params["base_url"] = "https://openrouter.ai/api/v1"
+                    create_params["headers"] = {
+                        "HTTP-Referer": "https://github.com/prestoncn/AutoAgent",
+                        "X-Title": "AutoAgent",
+                        "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}"
+                    }
 
                 completion_response = completion(**create_params)
 
@@ -192,11 +209,15 @@ class MetaChain:
                         "base_url": "https://openrouter.ai/api/v1",
                         "headers": {
                             "HTTP-Referer": "https://github.com/prestoncn/AutoAgent",
-                            "X-Title": "AutoAgent"
+                            "X-Title": "AutoAgent",
+                            "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}"
                         }
                     })
                 else:
-                    create_params["base_url"] = API_BASE_URL
+                    create_params["base_url"] = "https://generativelanguage.googleapis.com/v1beta/models/"
+                    create_params["headers"] = {
+                        "Authorization": f"Bearer {os.getenv('GOOGLE_API_KEY')}"
+                    }
 
                 completion_response = completion(**create_params)
 
@@ -222,9 +243,15 @@ class MetaChain:
                 self.logger.info("Primary provider failed, trying thinking model on OpenRouter...", title="MODEL UPGRADE", color="yellow")
                 try:
                     thinking_params = {
-                        "model": "google/gemini-2.0-flash-thinking-exp:free",
+                        "model": "openrouter/google/gemini-2.0-flash-thinking-exp:free",  # Added openrouter/ prefix
                         "messages": messages,
                         "stream": stream,
+                        "base_url": "https://openrouter.ai/api/v1",
+                        "headers": {
+                            "HTTP-Referer": "https://github.com/prestoncn/AutoAgent",
+                            "X-Title": "AutoAgent",
+                            "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}"
+                        }
                     }
                     completion_response = completion(**thinking_params)
                     return completion_response
@@ -232,32 +259,48 @@ class MetaChain:
                     # If OpenRouter thinking model fails, fall back to Google AI Studio
                     self.logger.info("OpenRouter thinking model failed, falling back to Google AI Studio...", title="FAILOVER", color="yellow")
                     try:
+                        # Debug log the API key (safely)
+                        google_api_key = os.getenv("GOOGLE_API_KEY")
+                        self.logger.info(
+                            f"Google API Key present: {bool(google_api_key)}", 
+                            title="API Key Check",
+                            color="yellow"
+                        )
+                        
                         backup_params = {
                             "model": "gemini-2.0-flash-thinking-exp-01-21",
                             "messages": messages,
                             "stream": stream,
+                            "base_url": "https://generativelanguage.googleapis.com/v1beta/models",  # Remove trailing slash
+                            "headers": {
+                                "Content-Type": "application/json",
+                                "Authorization": f"Bearer {google_api_key}"  # Use consistent auth method
+                            }
                         }
+                        
+                        # Debug log the request parameters (excluding sensitive data)
+                        debug_params = {**backup_params}
+                        if "headers" in debug_params:
+                            debug_params["headers"] = {
+                                k: v for k, v in debug_params["headers"].items() 
+                                if k != "Authorization"
+                            }
+                        self.logger.info(
+                            f"Google AI Studio params: {json.dumps(debug_params, indent=2)}", 
+                            title="Request Parameters",
+                            color="yellow"
+                        )
+                        
                         completion_response = completion(**backup_params)
                         return completion_response
                     except Exception as backup_e:
-                        # Try o3-mini as final fallback
-                        self.logger.info("Google AI Studio failed, trying o3-mini via OpenRouter...", title="FINAL FALLBACK", color="yellow")
-                        try:
-                            final_params = {
-                                "model": "openai/o3-mini",
-                                "messages": messages,
-                                "stream": stream,
-                                "base_url": "https://openrouter.ai/api/v1",
-                                "headers": {
-                                    "HTTP-Referer": "https://github.com/prestoncn/AutoAgent",
-                                    "X-Title": "AutoAgent"
-                                }
-                            }
-                            completion_response = completion(**final_params)
-                            return completion_response
-                        except Exception as final_e:
-                            self.logger.info(f"All providers failed. Last error: {final_e}", title="BACKUP ERROR", color="red")
-                            raise final_e
+                        # Log final error and raise
+                        self.logger.info(
+                            f"All providers failed. Last error: {str(backup_e)}", 
+                            title="BACKUP ERROR", 
+                            color="red"
+                        )
+                        raise backup_e
             else:
                 raise e
 
@@ -599,6 +642,12 @@ class MetaChain:
                     "tools": tools or None,
                     "tool_choice": agent.tool_choice,
                     "stream": stream,
+                    "base_url": "https://openrouter.ai/api/v1",
+                    "headers": {
+                        "HTTP-Referer": "https://github.com/prestoncn/AutoAgent",
+                        "X-Title": "AutoAgent",
+                        "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}"
+                    }
                 }
 
                 NO_SENDER_MODE = False
@@ -614,20 +663,29 @@ class MetaChain:
                             del message['sender']
                     create_params["messages"] = messages
 
-                if tools and create_params["model"].startswith("gpt"):
+                # Ensure model name doesn't trigger OpenAI detection
+                if "gpt" in create_model.lower() and not create_model.startswith(("openrouter/", "google/")):
+                    create_model = f"openrouter/{create_model}"
+                    create_params["model"] = create_model
+
+                if tools and "gpt" in create_params["model"]:
                     create_params["parallel_tool_calls"] = agent.parallel_tool_calls
 
-                # Add OpenRouter configuration if using an OpenRouter model
-                if "openrouter/" in create_model or create_model.startswith("google/"):
-                    create_params.update({
-                        "base_url": "https://openrouter.ai/api/v1",
-                        "headers": {
-                            "HTTP-Referer": "https://github.com/prestoncn/AutoAgent",
-                            "X-Title": "AutoAgent"
-                        }
-                    })
+                # Use OpenRouter or Google AI Studio based on model prefix
+                if create_model.startswith("google/"):
+                    create_params["base_url"] = "https://generativelanguage.googleapis.com/v1beta/models"  # Remove trailing slash
+                    create_params["headers"] = {
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {os.getenv('GOOGLE_API_KEY')}"
+                    }
                 else:
-                    create_params["base_url"] = API_BASE_URL
+                    # Default to OpenRouter for all other models
+                    create_params["base_url"] = "https://openrouter.ai/api/v1"
+                    create_params["headers"] = {
+                        "HTTP-Referer": "https://github.com/prestoncn/AutoAgent",
+                        "X-Title": "AutoAgent",
+                        "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}"
+                    }
 
                 completion_response = await acompletion(**create_params)
 
@@ -656,23 +714,38 @@ class MetaChain:
                         if 'sender' in message:
                             del message['sender']
 
+                if NON_FN_CALL:
+                    messages = convert_fn_messages_to_non_fn_messages(messages)
+                if ADD_USER and messages[-1]["role"] != "user":
+                    messages = interleave_user_into_messages(messages)
+
                 create_params = {
                     "model": create_model,
                     "messages": messages,
                     "stream": stream,
+                    "base_url": "https://openrouter.ai/api/v1",
+                    "headers": {
+                        "HTTP-Referer": "https://github.com/prestoncn/AutoAgent",
+                        "X-Title": "AutoAgent",
+                        "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}"
+                    }
                 }
 
-                # Add OpenRouter configuration if using an OpenRouter model
-                if "openrouter/" in create_model or create_model.startswith("google/"):
-                    create_params.update({
-                        "base_url": "https://openrouter.ai/api/v1",
-                        "headers": {
-                            "HTTP-Referer": "https://github.com/prestoncn/AutoAgent",
-                            "X-Title": "AutoAgent"
-                        }
-                    })
+                # Use OpenRouter or Google AI Studio based on model prefix
+                if create_model.startswith("google/"):
+                    create_params["base_url"] = "https://generativelanguage.googleapis.com/v1beta/models"  # Remove trailing slash
+                    create_params["headers"] = {
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {os.getenv('GOOGLE_API_KEY')}"
+                    }
                 else:
-                    create_params["base_url"] = API_BASE_URL
+                    # Default to OpenRouter for all other models
+                    create_params["base_url"] = "https://openrouter.ai/api/v1"
+                    create_params["headers"] = {
+                        "HTTP-Referer": "https://github.com/prestoncn/AutoAgent",
+                        "X-Title": "AutoAgent",
+                        "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}"
+                    }
 
                 completion_response = await acompletion(**create_params)
 
@@ -696,9 +769,15 @@ class MetaChain:
                 self.logger.info("Primary provider failed, trying thinking model on OpenRouter...", title="MODEL UPGRADE", color="yellow")
                 try:
                     thinking_params = {
-                        "model": "google/gemini-2.0-flash-thinking-exp:free",
+                        "model": "openrouter/google/gemini-2.0-flash-thinking-exp:free",  # Added openrouter/ prefix
                         "messages": messages,
                         "stream": stream,
+                        "base_url": "https://openrouter.ai/api/v1",
+                        "headers": {
+                            "HTTP-Referer": "https://github.com/prestoncn/AutoAgent",
+                            "X-Title": "AutoAgent",
+                            "Authorization": f"Bearer {os.getenv('OPENROUTER_API_KEY')}"
+                        }
                     }
                     completion_response = await acompletion(**thinking_params)
                     return completion_response
@@ -706,32 +785,48 @@ class MetaChain:
                     # If OpenRouter thinking model fails, fall back to Google AI Studio
                     self.logger.info("OpenRouter thinking model failed, falling back to Google AI Studio...", title="FAILOVER", color="yellow")
                     try:
+                        # Debug log the API key (safely)
+                        google_api_key = os.getenv("GOOGLE_API_KEY")
+                        self.logger.info(
+                            f"Google API Key present: {bool(google_api_key)}", 
+                            title="API Key Check",
+                            color="yellow"
+                        )
+                        
                         backup_params = {
                             "model": "gemini-2.0-flash-thinking-exp-01-21",
                             "messages": messages,
                             "stream": stream,
+                            "base_url": "https://generativelanguage.googleapis.com/v1beta/models",  # Remove trailing slash
+                            "headers": {
+                                "Content-Type": "application/json",
+                                "Authorization": f"Bearer {google_api_key}"  # Use consistent auth method
+                            }
                         }
-                        completion_response = await acompletion(**backup_params)
+                        
+                        # Debug log the request parameters (excluding sensitive data)
+                        debug_params = {**backup_params}
+                        if "headers" in debug_params:
+                            debug_params["headers"] = {
+                                k: v for k, v in debug_params["headers"].items() 
+                                if k != "Authorization"
+                            }
+                        self.logger.info(
+                            f"Google AI Studio params: {json.dumps(debug_params, indent=2)}", 
+                            title="Request Parameters",
+                            color="yellow"
+                        )
+                        
+                        completion_response = completion(**backup_params)
                         return completion_response
                     except Exception as backup_e:
-                        # Try o3-mini as final fallback
-                        self.logger.info("Google AI Studio failed, trying o3-mini via OpenRouter...", title="FINAL FALLBACK", color="yellow")
-                        try:
-                            final_params = {
-                                "model": "openai/o3-mini",
-                                "messages": messages,
-                                "stream": stream,
-                                "base_url": "https://openrouter.ai/api/v1",
-                                "headers": {
-                                    "HTTP-Referer": "https://github.com/prestoncn/AutoAgent",
-                                    "X-Title": "AutoAgent"
-                                }
-                            }
-                            completion_response = await acompletion(**final_params)
-                            return completion_response
-                        except Exception as final_e:
-                            self.logger.info(f"All providers failed. Last error: {final_e}", title="BACKUP ERROR", color="red")
-                            raise final_e
+                        # Log final error and raise
+                        self.logger.info(
+                            f"All providers failed. Last error: {str(backup_e)}", 
+                            title="BACKUP ERROR", 
+                            color="red"
+                        )
+                        raise backup_e
             else:
                 raise e
 
@@ -822,3 +917,4 @@ class MetaChain:
             agent=active_agent,
             context_variables=context_variables,
         )
+
