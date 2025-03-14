@@ -1,11 +1,19 @@
 # type: ignore
+import os
+# Configure environment variables for pydub
+os.environ["PYDUB_USE_FFMPEG"] = "False"
+os.environ["PYDUB_NO_FFMPEG"] = "True"
+
+import warnings
+# Add filter to ignore pydub warnings
+warnings.filterwarnings("ignore", category=RuntimeWarning, module="pydub")
+
 import base64
 import binascii
 import copy
 import html
 import json
 import mimetypes
-import os
 import re
 import shutil
 import subprocess

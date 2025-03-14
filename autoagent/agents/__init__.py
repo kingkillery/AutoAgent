@@ -28,6 +28,13 @@ from autoagent.registry import registry
 from autoagent.agents.openai_assistant_agent import OpenAIAssistantAgent
 from autoagent.agents.get_openai_assistant_agent import get_openai_assistant_agent
 
+# Import TTSAgent separately to avoid circular imports
+try:
+    from autoagent.agents.tts_agent import TTSAgent
+    from autoagent.agents.get_tts_agent import get_tts_agent
+except ImportError as e:
+    print(f"Warning: Failed to import TTS agent: {e}")
+
 def import_agents_recursively(base_dir: str, base_package: str):
     """Recursively import all agents in .py files
     
@@ -40,7 +47,7 @@ def import_agents_recursively(base_dir: str, base_package: str):
         rel_path = os.path.relpath(root, base_dir)
         
         for file in files:
-            if file.endswith('.py') and not file.startswith('__'):
+            if file.endswith('.py') and not file.startswith('__') and file not in ["tts_agent.py", "get_tts_agent.py"]:
                 # build the module path
                 if rel_path == '.':
                     # in the root directory
@@ -63,4 +70,7 @@ import_agents_recursively(current_dir, 'autoagent.agents')
 globals().update(registry.agents)
 globals().update(registry.plugin_agents)
 
+# Add TTSAgent and get_tts_agent to __all__ if they were successfully imported
 __all__ = list(registry.agents.keys()) + ["OpenAIAssistantAgent", "get_openai_assistant_agent"]
+if "TTSAgent" in globals() and "get_tts_agent" in globals():
+    __all__ += ["TTSAgent", "get_tts_agent"]

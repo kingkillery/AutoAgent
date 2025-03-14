@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200">
+  <defs>
+    <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1890ff" />
+      <stop offset="100%" stop-color="#4CAF50" />
+    </linearGradient>
+  </defs>
+  <circle cx="100" cy="100" r="90" fill="#001529" stroke="url(#gradient)" stroke-width="5" />
+  <path d="M100 40 L140 100 L100 160 L60 100 Z" fill="url(#gradient)" />
+  <circle cx="100" cy="100" r="25" fill="#001529" stroke="white" stroke-width="3" />
+  <path d="M85 85 L115 115 M85 115 L115 85" stroke="white" stroke-width="3" stroke-linecap="round" />
+  <text x="100" y="190" font-family="Arial" font-size="16" fill="white" text-anchor="middle">UI Assistant</text>
+</svg> 

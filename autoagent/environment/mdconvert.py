@@ -9,6 +9,15 @@ def _get_page_markdown():
         _get_page_markdown()
     """
     # # type: ignore
+    import os
+    # Configure environment variables for pydub
+    os.environ["PYDUB_USE_FFMPEG"] = "False"
+    os.environ["PYDUB_NO_FFMPEG"] = "True"
+
+    import warnings
+    # Add filter to ignore pydub warnings
+    warnings.filterwarnings("ignore", category=RuntimeWarning, module="pydub")
+    
     import io
     import base64
     import binascii
@@ -16,7 +25,6 @@ def _get_page_markdown():
     import html
     import json
     import mimetypes
-    import os
     import re
     import shutil
     import subprocess

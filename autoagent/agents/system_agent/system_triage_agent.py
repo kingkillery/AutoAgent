@@ -5,6 +5,7 @@ from autoagent.registry import register_agent
 from autoagent.types import Agent, Result
 from autoagent.tools.inner import case_resolved, case_not_resolved
 from autoagent.environment.browser_env import BrowserEnv
+from autoagent.agents.get_tts_agent import get_tts_agent
 import os
 
 @register_agent(name = "System Triage Agent", func_name="get_system_triage_agent")
@@ -19,14 +20,16 @@ def get_system_triage_agent(model: str, **kwargs):
     filesurfer_agent = get_filesurfer_agent(model)
     websurfer_agent = get_websurfer_agent(model)
     coding_agent = get_coding_agent(model)
+    tts_agent = get_tts_agent()
     instructions = \
 f"""You are a helpful assistant that can help the user with their request.
 Based on the state of solving user's task, your responsibility is to determine which agent is best suited to handle the user's request under the current context, and transfer the conversation to that agent. And you should not stop to try to solve the user's request by transferring to another agent only until the task is completed.
 
-There are three agents you can transfer to:
+There are four agents you can transfer to:
 1. use `transfer_to_filesurfer_agent` to transfer to {filesurfer_agent.name}, it can help you to open any type of local files and browse the content of them.
 2. use `transfer_to_websurfer_agent` to transfer to {websurfer_agent.name}, it can help you to open any website and browse any content on it.
 3. use `transfer_to_coding_agent` to transfer to {coding_agent.name}, it can help you to write code to solve the user's request, especially some complex tasks.
+4. use `transfer_to_tts_agent` to transfer to {tts_agent.name}, it can convert text to natural-sounding speech using the CSM-1B model.
 """
     tool_choice = "auto" 
     system_triage_agent = Agent(
@@ -49,23 +52,21 @@ There are three agents you can transfer to:
         Args:
             sub_task_description: The detailed description of the sub-task that the `System Triage Agent` will ask the `Web Surfer Agent` to do.
         """
-        # Ensure local_root exists and is valid
-        local_root = os.path.expanduser("~")
-        workplace_name = "browser_workplace"
-        
-        # Pass these values in context variables instead of directly creating BrowserEnv
-        # This lets the WebSurfer tools handle the creation with proper error handling
-        return Result(
-            value=f"Transferred to WebSurfer Agent to handle: {sub_task_description}",
-            agent=websurfer_agent,
-            context_variables={
-                "local_root": local_root,
-                "workplace_name": workplace_name
-            }
-        )
+        return Result(value=sub_task_description, agent=websurfer_agent)
     
     def transfer_to_coding_agent(sub_task_description: str):
+        """
+        Args:
+            sub_task_description: The detailed description of the sub-task that the `System Triage Agent` will ask the `Coding Agent` to do.
+        """
         return Result(value=sub_task_description, agent=coding_agent)
+    
+    def transfer_to_tts_agent(sub_task_description: str):
+        """
+        Args:
+            sub_task_description: The detailed description of the sub-task that the `System Triage Agent` will ask the `Text-to-Speech Agent` to do.
+        """
+        return Result(value=sub_task_description, agent=tts_agent)
     
     def transfer_back_to_triage_agent(task_status: str):
         """
@@ -75,13 +76,23 @@ There are three agents you can transfer to:
         return Result(value=task_status, agent=system_triage_agent)
     
     system_triage_agent.agent_teams = {
-        filesurfer_agent.name: transfer_to_filesurfer_agent,
-        websurfer_agent.name: transfer_to_websurfer_agent,
-        coding_agent.name: transfer_to_coding_agent
+        filesurfer_agent.name: get_filesurfer_agent,
+        websurfer_agent.name: get_websurfer_agent,
+        coding_agent.name: get_coding_agent,
+        tts_agent.name: get_tts_agent,
     }
-    system_triage_agent.functions.extend([transfer_to_filesurfer_agent, transfer_to_websurfer_agent, transfer_to_coding_agent])
+    
+    system_triage_agent.functions.extend([
+        transfer_to_filesurfer_agent, 
+        transfer_to_websurfer_agent, 
+        transfer_to_coding_agent,
+        transfer_to_tts_agent
+    ])
+    
     filesurfer_agent.functions.append(transfer_back_to_triage_agent)
     websurfer_agent.functions.append(transfer_back_to_triage_agent)
     coding_agent.functions.append(transfer_back_to_triage_agent)
+    tts_agent.functions.append(transfer_back_to_triage_agent)
+    
     return system_triage_agent
 

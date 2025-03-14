@@ -224,3 +224,12 @@ def register_plugin_agent(name: str = None, func_name: str = None):
 def register_workflow(name: str = None):
     func_name = name
     return registry.register(type="workflow", name=name, func_name=func_name)
+
+def get_registered_tools():
+    """
+    Get all registered tools.
+    
+    Returns:
+        Dict[str, Callable]: Dictionary of registered tools
+    """
+    return registry.tools
