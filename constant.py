@@ -75,7 +75,7 @@ if FN_CALL is None:
     FN_CALL = True
     for model in NOT_USE_FN_CALL:
         if model in COMPLETION_MODEL:
-            FN_CALL = False
+            FN_CALL = True
             break
 
 NON_FN_CALL = False

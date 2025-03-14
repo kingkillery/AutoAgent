@@ -42,7 +42,7 @@ def with_env(env: BrowserEnv):
     return decorator
 
 def with_two_envs(env: BrowserEnv, code_env: DockerEnv):
-    """将env注入到工具函数中的装饰器"""
+    """Injects both browser and code envs into a tool function."""
     def decorator(func):
         def wrapped(*args, **kwargs):
             return func(env=env, code_env=code_env, *args, **kwargs)

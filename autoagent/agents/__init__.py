@@ -25,6 +25,8 @@
 import os
 import importlib
 from autoagent.registry import registry
+from autoagent.agents.openai_assistant_agent import OpenAIAssistantAgent
+from autoagent.agents.get_openai_assistant_agent import get_openai_assistant_agent
 
 def import_agents_recursively(base_dir: str, base_package: str):
     """Recursively import all agents in .py files
@@ -61,4 +63,4 @@ import_agents_recursively(current_dir, 'autoagent.agents')
 globals().update(registry.agents)
 globals().update(registry.plugin_agents)
 
-__all__ = list(registry.agents.keys())
+__all__ = list(registry.agents.keys()) + ["OpenAIAssistantAgent", "get_openai_assistant_agent"]

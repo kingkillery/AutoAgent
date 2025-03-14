@@ -150,12 +150,13 @@ Successfully installed Werkzeug-3.0.2 blinker-1.7.0 click-8.1.7 flask-3.0.3 itsd
 ASSISTANT: The `flask` module is installed successfully. Let me run the Python file again:
 <function=execute_bash>
 <parameter=command>
+<parameter=command>
 python3 app.py > server.log 2>&1 &
 </parameter>
 </function>
 
 USER: EXECUTION RESULT of [execute_bash]:
-[1] 124
+[1] 126
 
 ASSISTANT:
 Let me check the server log again:
@@ -173,7 +174,7 @@ WARNING: This is a development server. Do not use it in a production deployment.
 Press CTRL+C to quit
 
 ASSISTANT:
-The server is running on port 5000 with PID 124. You can access the list of numbers by visiting http://127.0.0.1:5000. If you have any further questions, feel free to ask!
+The server is running on port 5000 with PID 126. You can access the list of numbers by visiting http://127.0.0.1:5000. If you have any further questions, feel free to ask!
 
 USER: Now kill the server, make it display the numbers in a table format.
 
@@ -435,31 +436,12 @@ def convert_fncall_messages_to_non_fncall_messages(
         # - 3.1 no change if no function call
         # - 3.2 change if function call
         elif role == 'assistant':
-            if 'tool_calls' in message and message['tool_calls'] is not None:
-                if len(message['tool_calls']) != 1:
-                    raise FunctionCallConversionError(
-                        f'Expected exactly one tool call in the message. More than one tool call is not supported. But got {len(message["tool_calls"])} tool calls. Content: {content}'
-                    )
-                try:
-                    tool_content = convert_tool_call_to_string(message['tool_calls'][0])
-                except FunctionCallConversionError as e:
-                    raise FunctionCallConversionError(
-                        f'Failed to convert tool call to string.\nCurrent tool call: {message["tool_calls"][0]}.\nRaw messages: {json.dumps(messages, indent=2)}'
-                    ) from e
-                if isinstance(content, str):
-                    content += '\n\n' + tool_content
-                    content = content.lstrip()
-                elif isinstance(content, list):
-                    if content and content[-1]['type'] == 'text':
-                        content[-1]['text'] += '\n\n' + tool_content
-                        content[-1]['text'] = content[-1]['text'].lstrip()
-                    else:
-                        content.append({'type': 'text', 'text': tool_content})
-                else:
-                    raise FunctionCallConversionError(
-                        f'Unexpected content type {type(content)}. Expected str or list. Content: {content}'
-                    )
-            converted_messages.append({'role': 'assistant', 'content': content})
+            new_message = {'role': 'assistant'}
+            if 'tool_calls' in message:
+                new_message['tool_calls'] = message['tool_calls']
+            if content:
+                new_message['content'] = content
+            converted_messages.append(new_message)
 
         # 4. TOOL MESSAGES (tool outputs)
         elif role == 'tool':
@@ -486,90 +468,97 @@ def convert_fncall_messages_to_non_fncall_messages(
     return converted_messages
 
 
-def _extract_and_validate_params(
-    matching_tool: dict, param_matches: Iterable[re.Match], fn_name: str
-) -> dict:
+def _fix_stopword(text):
+    """
+    Fix or remove any stopwords or invalid characters that might interfere with function call parsing.
+    
+    Args:
+        text (str): The text to fix
+        
+    Returns:
+        str: The fixed text
+    """
+    if not isinstance(text, str):
+        return text
+    
+    # Remove any trailing stopwords that might interfere with the function call pattern matching
+    # This is particularly important for certain LLM responses that end with phrases like "I'll call the function now"
+    stopwords = ["</function>", "</ function>"]
+    for stopword in stopwords:
+        if text.endswith(stopword):
+            text = text[:-len(stopword)].strip()
+    
+    return text
+
+
+def _extract_and_validate_params(tool_definition, param_matches, fn_name):
+    """
+    Extract and validate parameters from function call matches.
+    
+    Args:
+        tool_definition (dict): The tool definition containing parameter information
+        param_matches (Iterable): Iterator of regex matches for parameters
+        fn_name (str): The function name for error reporting
+        
+    Returns:
+        dict: The extracted and validated parameters
+    """
     params = {}
-    # Parse and validate parameters
-    required_params = set()
-    if 'parameters' in matching_tool and 'required' in matching_tool['parameters']:
-        required_params = set(matching_tool['parameters'].get('required', []))
-
-    allowed_params = set()
-    if 'parameters' in matching_tool and 'properties' in matching_tool['parameters']:
-        allowed_params = set(matching_tool['parameters']['properties'].keys())
-
-    param_name_to_type = {}
-    if 'parameters' in matching_tool and 'properties' in matching_tool['parameters']:
-        param_name_to_type = {
-            name: val.get('type', 'string')
-            for name, val in matching_tool['parameters']['properties'].items()
-        }
-
-    # Collect parameters
-    found_params = set()
-    for param_match in param_matches:
-        param_name = param_match.group(1)
-        param_value = param_match.group(2).strip()
-
-        # Validate parameter is allowed
-        if allowed_params and param_name not in allowed_params:
+    properties = tool_definition.get('parameters', {}).get('properties', {})
+    required_params = set(tool_definition.get('parameters', {}).get('required', []))
+    
+    # Extract parameters from matches
+    for match in param_matches:
+        param_name = match.group(1)
+        param_value = match.group(2).strip()
+        
+        # Check if parameter exists in tool definition
+        if param_name not in properties:
             raise FunctionCallValidationError(
-                f"Parameter '{param_name}' is not allowed for function '{fn_name}'. "
-                f'Allowed parameters: {allowed_params}'
+                f"Parameter '{param_name}' not found in function '{fn_name}'. "
+                f"Available parameters: {list(properties.keys())}"
             )
-
-        # Validate and convert parameter type
-        # supported: string, integer, array
-        if param_name in param_name_to_type:
-            if param_name_to_type[param_name] == 'integer':
-                try:
-                    param_value = int(param_value)
-                except ValueError:
-                    raise FunctionCallValidationError(
-                        f"Parameter '{param_name}' is expected to be an integer."
-                    )
-            elif param_name_to_type[param_name] == 'array':
-                try:
-                    param_value = json.loads(param_value)
-                except json.JSONDecodeError:
-                    raise FunctionCallValidationError(
-                        f"Parameter '{param_name}' is expected to be an array."
-                    )
-            else:
-                # string
-                pass
-
-        # Enum check
-        if 'enum' in matching_tool['parameters']['properties'][param_name]:
-            if (
-                param_value
-                not in matching_tool['parameters']['properties'][param_name]['enum']
-            ):
+        
+        # Convert parameter value based on type
+        param_type = properties[param_name].get('type', 'string')
+        if param_type == 'number' or param_type == 'integer':
+            try:
+                param_value = int(param_value) if param_type == 'integer' else float(param_value)
+            except ValueError:
                 raise FunctionCallValidationError(
-                    f"Parameter '{param_name}' is expected to be one of {matching_tool['parameters']['properties'][param_name]['enum']}."
+                    f"Parameter '{param_name}' must be a {param_type}, got '{param_value}'"
                 )
-
+        elif param_type == 'boolean':
+            param_value = param_value.lower() in ('true', 'yes', '1', 'y')
+        elif param_type == 'array':
+            try:
+                # Try to parse as JSON array
+                param_value = json.loads(param_value)
+                if not isinstance(param_value, list):
+                    raise ValueError("Not a list")
+            except (json.JSONDecodeError, ValueError):
+                # Fall back to simple comma-separated parsing
+                param_value = [item.strip() for item in param_value.split(',')]
+        elif param_type == 'object':
+            try:
+                param_value = json.loads(param_value)
+                if not isinstance(param_value, dict):
+                    raise ValueError("Not an object")
+            except (json.JSONDecodeError, ValueError):
+                raise FunctionCallValidationError(
+                    f"Parameter '{param_name}' must be a valid JSON object, got '{param_value}'"
+                )
+        
         params[param_name] = param_value
-        found_params.add(param_name)
-
-    # Check all required parameters are present
-    missing_params = required_params - found_params
-    if missing_params:
+    
+    # Check for missing required parameters
+    missing_required = required_params - set(params.keys())
+    if missing_required:
         raise FunctionCallValidationError(
-            f"Missing required parameters for function '{fn_name}': {missing_params}"
+            f"Missing required parameters for function '{fn_name}': {list(missing_required)}"
         )
+    
     return params
-
-
-def _fix_stopword(content: str) -> str:
-    """Fix the issue when some LLM would NOT return the stopword."""
-    if '<function=' in content and content.count('<function=') == 1:
-        if content.endswith('</'):
-            content = content.rstrip() + 'function>'
-        else:
-            content = content + '\n</function>'
-    return content
 
 
 def convert_non_fncall_messages_to_fncall_messages(
@@ -820,7 +809,7 @@ def convert_fn_messages_to_non_fn_messages(messages):
         
         # Original logic continues with safe values
         if tool_calls:
-            msg_content += f"\n<tool_call>\n{json.dumps(tool_calls, indent=2)}\n</tool_call>"
+            msg_content += f"\n\n{json.dumps(tool_calls, indent=2)}\n\n"
         
         converted.append({
             "role": message["role"],

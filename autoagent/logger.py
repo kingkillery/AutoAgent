@@ -6,7 +6,12 @@ from typing import List
 from constant import DEBUG, DEFAULT_LOG, LOG_PATH, MC_MODE
 from pathlib import Path
 import os
+import logging
+import sys
+from typing import Optional
+
 BAR_LENGTH = 60
+
 class MetaChainLogger:
     def __init__(self, log_path: str):
         self.log_path = log_path
@@ -185,4 +190,55 @@ def set_logger(new_logger):
 #     logger.pretty_print_messages({"role": "assistant", "content": "Hello, world!", "tool_calls": [{"function": {"name": "test", "arguments": {"url": "https://www.google.com", "query": "test"}}}], "sender": "test_agent"})
 
 #     logger.pretty_print_messages({"role": "tool", "name": "test", "content": "import requests\n\nurl = 'https://www.google.com'\nquery = 'test'\n\nresponse = requests.get(url)\nprint(response.text)", "sender": "test_agent"})
+
 #     logger.info("test content", color="red", title="test")
+
+import logging
+import sys
+import os
+
+# Configure basic logging format
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+
+def get_logger(name):
+    """
+    Returns a logger with the specified name.
+    
+    Args:
+        name (str): Name for the logger.
+    
+    Returns:
+        logging.Logger: Configured logger object.
+    """
+    return logging.getLogger(name)
+
+# Legacy function to maintain backward compatibility
+def setup_logger(name, log_file=None, level=logging.INFO):
+    """
+    Set up a logger with the specified name, file, and level.
+    
+    Args:
+        name (str): Name for the logger.
+        log_file (str, optional): Path to log file. Defaults to None.
+        level (int, optional): Logging level. Defaults to logging.INFO.
+    
+    Returns:
+        logging.Logger: Configured logger object.
+    """
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+    
+    # Add file handler if log_file is specified
+    if log_file:
+        os.makedirs(os.path.dirname(log_file), exist_ok=True)
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+        logger.addHandler(file_handler)
+    
+    return logger

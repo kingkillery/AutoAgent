@@ -538,3 +538,35 @@ def pretty_print_messages(message, **kwargs) -> None:
                 arg_str = json.dumps(json.loads(args)).replace(":", "=")
                 file.write(f"{name}({arg_str[1:-1]})\n")
 
+def get_openai_assistant_agent(name: str, tools: List[Callable] = None, instructions: str = None, assistant_id: str = None, model: str = "gpt-4o"):
+    """
+    Create an OpenAIAssistantAgent with the specified tools.
+    
+    Args:
+        name: The name of the agent
+        tools: List of tool functions to register with the assistant
+        instructions: Instructions for the assistant
+        assistant_id: Optional ID of an existing OpenAI Assistant
+        model: The model to use for the assistant (default: gpt-4o)
+        
+    Returns:
+        An OpenAIAssistantAgent instance
+    """
+    from autoagent.agents.openai_assistant_agent import OpenAIAssistantAgent
+    
+    agent = OpenAIAssistantAgent(
+        name=name,
+        assistant_id=assistant_id,
+        model=model
+    )
+    
+    # Convert tools to OpenAI format
+    openai_tools = []
+    if tools:
+        openai_tools = [function_to_json(tool) for tool in tools]
+    
+    # Initialize the agent with tools and instructions
+    # This is done asynchronously, so we return the agent and let the caller
+    # handle the initialization
+    return agent, openai_tools, instructions
+

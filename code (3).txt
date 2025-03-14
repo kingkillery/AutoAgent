@@ -1,0 +1,49 @@
+{
+  "Recommended prompts": {
+        "description": "To make sure that LLMs understand handoffs properly, we recommend including information about handoffs in your agents. We have a suggested prefix in agents.extensions.handoff_prompt.RECOMMENDED_PROMPT_PREFIX, or you can call agents.extensions.handoff_prompt.prompt_with_handoff_instructions to automatically add recommended data to your prompts.",
+        "code": "from agents import Agent\nfrom agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX\n\nbilling_agent = Agent(\n    name=\"Billing agent\",\n    instructions=f\"\"\"{RECOMMENDED_PROMPT_PREFIX}\n    <Fill in the rest of your prompt here>.\"\"\",\n)\n"
+      }
+    },
+    "Creating traces/spans": {
+      "Trace": {
+        "description": "A trace is the root level object that tracing creates. It represents a logical \"workflow\"."
+      },
+      "NoOpTrace": {
+        "description": "A no-op trace that will not be recorded."
+      },
+      "SpanImpl": {
+        "description": "A trace that will be recorded by the tracing library."
+      },
+      "Span": {
+        "description": "Interface for a span: an action that happens during the agent run."
+      }
+    },
+    "Span data": {
+    
+    },
+    "Processor interface": {
+      "TracingProcessor": {
+        "description": "Interface for processing spans."
+      }
+    },
+    "Processors": {
+      "ConsoleSpanExporter": {
+        "description": "Prints the traces and spans to the console."
+      },
+      "BatchTraceProcessor": {
+        "description": "Some implementation notes:\n1. Using Queue, which is thread-safe.\n2. Using a background thread to export spans, to minimize any performance issues.\n3. Spans are stored in memory until they are exported."
+      },
+      "BackendSpanExporter": {
+        "description": "Exports traces and spans. For example, could log them or send them to a backend."
+      }
+    },
+    "Handoff filters": {
+      "remove_all_tools": {
+        "description": "Filters out all tool items: file search, web search and function calls+output."
+      },
+      "Handoff prompt": {
+        "description": "Add recommended instructions to the prompt for agents that use handoffs."
+      }
+    }
+  }
+}

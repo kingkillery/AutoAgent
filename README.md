@@ -87,6 +87,7 @@ Welcome to AutoAgent-Windows! This is a Windows-optimized fork of the incredible
   * <a href='#installation'>Installation</a>
   * <a href='#api-keys-setup'>API Keys Setup</a>
   * <a href='#start-with-cli-mode'>Start with CLI Mode</a>
+  * <a href='#websurfer-example'>WebSurfer Example</a>
 * <a href='#todo'>☑️ Todo List</a>
 * <a href='#reproduce'>🔬 How To Reproduce the Results in the Paper</a>
 * <a href='#documentation'>📖 Documentation</a>
@@ -393,7 +394,37 @@ python process_tool_docs.py
 
 More features coming soon! 🚀 **Web GUI interface** under development.
 
+<span id='websurfer-example'/>
 
+### WebSurfer Example
+
+The WebSurfer component allows AI agents to navigate and interact with web pages. To run the WebSurfer example:
+
+```bash
+python examples/websurfer_example.py
+```
+
+#### Environment Variables for WebSurfer
+
+You can customize the WebSurfer example by setting these environment variables in a `.env` file:
+
+```
+GOOGLE_API_KEY=your_google_api_key
+GOOGLE_CSE_ID=your_google_custom_search_engine_id
+LOCAL_ROOT=path_to_local_root_directory
+WORKPLACE_NAME=websurfer_example
+TRY_COMPLEX_PAGE=false
+```
+
+- Set `TRY_COMPLEX_PAGE=true` if you want to attempt loading complex pages like W3Schools (may cause timeouts)
+
+#### Troubleshooting WebSurfer
+
+If you encounter browser-related errors:
+
+1. For "Frame marking" warnings - these are normal for complex pages and don't affect functionality
+2. For timeouts on complex pages - increase the `MAX_COMPLEX_PAGE_WAIT` value in the script
+3. If Google search returns CAPTCHA pages - this is expected when automating searches; consider using API access instead
 
 <span id='todo'/>
 
@@ -441,37 +472,6 @@ cd path/to/AutoAgent && sh evaluation/multihoprag/scripts/run_rag.sh
 Step3. The result will be saved in the `evaluation/multihoprag/result.json`.
 
 <span id='documentation'/>
-
-## 📖 Documentation
-
-A more detailed documentation is coming soon 🚀, and we will update in the [Documentation](https://AutoAgent-ai.github.io/docs) page.
-
-<span id='community'/>
-
-## 🤝 Join the Community
-
-We want to build a community for AutoAgent, and we welcome everyone to join us. You can join our community by:
-
-- [Join our Slack workspace](https://join.slack.com/t/AutoAgent-workspace/shared_invite/zt-2zibtmutw-v7xOJObBf9jE2w3x7nctFQ) - Here we talk about research, architecture, and future development.
-- [Join our Discord server](https://discord.gg/z68KRvwB) - This is a community-run server for general discussion, questions, and feedback. 
-- [Read or post Github Issues](https://github.com/HKUDS/AutoAgent/issues) - Check out the issues we're working on, or add your own ideas.
-
-
-<span id='acknowledgements'/>
-
-## 🙏 Acknowledgements
-
-This project is a fork of the excellent [AutoAgent framework](https://github.com/HKUDS/AutoAgent) by HKUDS. We are deeply grateful for their groundbreaking work that made this Windows-optimized version possible. All credit for the original architecture and design goes to the AutoAgent team.
-
-Rome wasn't built in a day. AutoAgent stands on the shoulders of giants, and we are deeply grateful for the outstanding work that came before us. Our framework architecture draws inspiration from [OpenAI Swarm](https://github.com/openai/swarm), while our user mode's three-agent design benefits from [Magentic-one](https://github.com/microsoft/autogen/tree/main/python/packages/autogen-magentic-one)'s insights. We've also learned from [OpenHands](https://github.com/All-Hands-AI/OpenHands) for documentation structure and many other excellent projects for agent-environment interaction design, among others. We express our sincere gratitude and respect to all these pioneering works that have been instrumental in shaping AutoAgent.
-
-
-<span id='cite'/>
-
-## 🌟 Cite
-
-Please cite both this fork and the original AutoAgent project:
-
 ```tex
 @misc{AutoAgent,
       title={{AutoAgent: A Fully-Automated and Zero-Code Framework for LLM Agents}},

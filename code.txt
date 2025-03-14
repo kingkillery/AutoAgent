@@ -1,0 +1,256 @@
+{
+  "OpenAI Agents Python Documentation": {
+    "Agents": {
+      "description": "Agents are the core building block in your apps. An agent is a large language model (LLM), configured with instructions and tools.",
+      "Basic configuration": {
+        "description": "Most common properties of an agent are instructions, model, model_settings, and tools.",
+        "properties": [
+          "instructions: also known as a developer message or system prompt.",
+          "model: which LLM to use, and optional model_settings to configure model tuning parameters like temperature, top_p, etc.",
+          "tools: Tools that the agent can use to achieve its tasks."
+        ],
+        "code": "from agents import Agent, ModelSettings, function_tool\n\n@function_tool\ndef get_weather(city: str) -> str:\n    return f\"The weather in {city} is sunny\"\n\nagent = Agent(\n    name=\"Haiku agent\",\n    instructions=\"Always respond in haiku form\",\n    model=\"o3-mini\",\n    tools=[get_weather],\n)\n"
+      },
+      "Context": {
+        "description": "Agents are generic on their context type. Context is a dependency-injection tool. You can provide any Python object as the context.",
+        "properties": [
+          "context: an object you create and pass to Runner.run(), that is passed to every agent, tool, handoff etc, and it serves as a grab bag of dependencies and state for the agent run."
+        ],
+        "code": "@dataclass\nclass UserContext:\n  uid: str\n  is_pro_user: bool\n\n  async def fetch_purchases() -> list[Purchase]:\n     return ...\n\nagent = Agent[UserContext](\n    ...,\n)\n"
+      },
+      "Output types": {
+        "description": "By default, agents produce plain text (i.e. str) outputs. If you want the agent to produce a particular type of output, you can use the output_type parameter. A common choice is to use Pydantic objects, but we support any type that can be wrapped in a Pydantic TypeAdapter - dataclasses, lists, TypedDict, etc.",
+        "code": "from pydantic import BaseModel\nfrom agents import Agent\n\nclass CalendarEvent(BaseModel):\n    name: str\n    date: str\n    participants: list[str]\n\nagent = Agent(\n    name=\"Calendar extractor\",\n    instructions=\"Extract calendar events from text\",\n    output_type=CalendarEvent,\n)\n"
+      },
+      "Handoffs": {
+        "description": "Handoffs are sub-agents that the agent can delegate to. You provide a list of handoffs, and the agent can choose to delegate to them if relevant. This is a powerful pattern that allows orchestrating modular, specialized agents that excel at a single task.",
+        "code": "from agents import Agent\n\nbooking_agent = Agent(...)\nrefund_agent = Agent(...)\n\ntriage_agent = Agent(\n    name=\"Triage agent\",\n    instructions=(\n        \"Help the user with their questions.\"\n        \"If they ask about booking, handoff to the booking agent.\"\n        \"If they ask about refunds, handoff to the refund agent.\"\n    ),\n    handoffs=[booking_agent, refund_agent],\n)\n"
+      },
+      "Dynamic instructions": {
+        "description": "You can provide dynamic instructions via a function. The function will receive the agent and context, and must return the prompt. Both regular and async functions are accepted.",
+        "code": "def dynamic_instructions(\n    context: RunContextWrapper[UserContext], agent: Agent[UserContext]\n) -> str:\n    return f\"The user's name is {context.context.name}. Help them with their questions.\"\n\nagent = Agent[UserContext](\n    name=\"Triage agent\",\n    instructions=dynamic_instructions,\n)\n"
+      },
+      "Lifecycle events (hooks)": {
+        "description": "You can hook into the agent lifecycle with the hooks property. Subclass the AgentHooks class, and override the methods you're interested in."
+      },
+      "Guardrails": {
+        "description": "Guardrails allow you to run checks/validations on user input, in parallel to the agent running. For example, you could screen the user's input for relevance."
+      },
+      "Cloning/copying agents": {
+        "description": "By using the clone() method on an agent, you can duplicate an Agent, and optionally change any properties you like.",
+        "code": "pirate_agent = Agent(\n    name=\"Pirate\",\n    instructions=\"Write like a pirate\",\n    model=\"o3-mini\",\n)\n\nrobot_agent = pirate_agent.clone(\n    name=\"Robot\",\n    instructions=\"Write like a robot\",\n)\n"
+      }
+    },
+    "Running agents": {
+      "description": "You can run agents via the Runner class. You have 3 options:\n\nRunner.run(), which runs async and returns a RunResult.\nRunner.run_sync(), which is a sync method and just runs .run() under the hood.\nRunner.run_streamed(), which runs async and returns a RunResultStreaming. It calls the LLM in streaming mode, and streams those events to you as they are received.",
+      "code": "from agents import Agent, Runner\n\nasync def main():\n    agent = Agent(name=\"Assistant\", instructions=\"You are a helpful assistant\")\n\n    result = await Runner.run(agent, \"Write a haiku about recursion in programming.\")\n    print(result.final_output)\n    # Code within the code,\n    # Functions calling themselves,\n    # Infinite loop's dance.\n",
+      "The agent loop": {
+        "description": "The runner runs a loop:\n\nWe call the LLM for the current agent, with the current input.\nThe LLM produces its output.\nIf the LLM returns a final_output, the loop ends and we return the result.\nIf the LLM does a handoff, we update the current agent and input, and re-run the loop.\nIf the LLM produces tool calls, we run those tool calls, append the results, and re-run the loop.\n\nIf we exceed the max_turns passed, we raise a MaxTurnsExceeded exception."
+      },
+      "Streaming": {
+        "description": "Streaming allows you to additionally receive streaming events as the LLM runs. Once the stream is done, the RunResultStreaming will contain the complete information about the run, including all the new outputs produces. You can call .stream_events() for the streaming events."
+      },
+      "Run config": {
+        "description": "The run_config parameter lets you configure some global settings for the agent run:",
+        "properties": [
+          "model: Allows setting a global LLM model to use, irrespective of what model each Agent has.",
+          "model_provider: A model provider for looking up model names, which defaults to OpenAI.",
+          "model_settings: Overrides agent-specific settings. For example, you can set a global temperature or top_p.",
+          "input_guardrails, output_guardrails: A list of input or output guardrails to include on all runs.",
+          "handoff_input_filter: A global input filter to apply to all handoffs, if the handoff doesn't already have one. The input filter allows you to edit the inputs that are sent to the new agent.",
+          "tracing_disabled: Allows you to disable tracing for the entire run.",
+          "trace_include_sensitive_data: Configures whether traces will include potentially sensitive data, such as LLM and tool call inputs/outputs.",
+          "workflow_name, trace_id, group_id: Sets the tracing workflow name, trace ID and trace group ID for the run.",
+          "trace_metadata: Metadata to include on all traces."
+        ]
+      },
+      "Conversations/chat threads": {
+        "description": "At the end of the agent run, you can choose what to show to the user. For example, you might show the user every new item generated by the agents, or just the final output. Either way, the user might then ask a followup question, in which case you can call the run method again.\n\nYou can use the base RunResultBase.to_input_list() method to get the inputs for the next turn.",
+        "code": "async def main():\n    agent = Agent(name=\"Assistant\", instructions=\"Reply very concisely.\")\n\n    with trace(workflow_name=\"Conversation\", group_id=thread_id):\n        # First turn\n        result = await Runner.run(agent, \"What city is the Golden Gate Bridge in?\")\n        print(result.final_output)\n        # San Francisco\n\n        # Second turn\n        new_input = result.to_input_list() + [{\"role\": \"user\", \"content\": \"What state is it in?\"}]\n        result = await Runner.run(agent, new_input)\n        print(result.final_output)\n        # California\n"
+      },
+      "Exceptions": {
+        "description": "The SDK raises exceptions in certain cases:",
+        "exceptions": [
+          "AgentsException is the base class for all exceptions raised in the SDK.",
+          "MaxTurnsExceeded is raised when the run exceeds the max_turns passed to the run methods.",
+          "ModelBehaviorError is raised when the model produces invalid outputs, e.g. malformed JSON or using non-existent tools.",
+          "UserError is raised when you (the person writing code using the SDK) make an error using the SDK.",
+          "InputGuardrailTripwireTriggered, OutputGuardrailTripwireTriggered is raised when a guardrail is tripped."
+        ]
+      }
+    },
+    "Results": {
+      "description": "When you call the Runner.run methods, you either get a:\n\nRunResult if you call run or run_sync\nRunResultStreaming if you call run_streamed",
+      "Final output": {
+        "description": "The final_output property contains the final output of the last agent that ran.\n\na str, if the last agent didn't have an output_type defined\nan object of type last_agent.output_type, if the agent had an output type defined."
+      },
+      "Inputs for the next turn": {
+        "description": "You can use result.to_input_list() to turn the result into an input list that concatenates the original input you provided, to the items generated during the agent run. This makes it convenient to take the outputs of one agent run and pass them into another run, or to run it in a loop and append new user inputs each time."
+      },
+      "Last agent": {
+        "description": "The last_agent property contains the last agent that ran. Depending on your application, this is often useful for the next time the user inputs something. For example, if you have a frontline triage agent that hands off to a language-specific agent, you can store the last agent, and re-use it the next time the user messages the agent."
+      },
+      "New items": {
+        "description": "The new_items property contains the new items generated during the run. The items are RunItems.",
+        "items": [
+          "MessageOutputItem indicates a message from the LLM. The raw item is the message generated.",
+          "HandoffCallItem indicates that the LLM called the handoff tool. The raw item is the tool call item from the LLM.",
+          "HandoffOutputItem indicates that a handoff occurred. The raw item is the tool response to the handoff tool call. You can also access the source/target agents from the item.",
+          "ToolCallItem indicates that the LLM invoked a tool.",
+          "ToolCallOutputItem indicates that a tool was called. The raw item is the tool response. You can also access the tool output from the item.",
+          "ReasoningItem indicates a reasoning item from the LLM. The raw item is the reasoning generated."
+        ]
+      },
+      "Other information": {
+        "Guardrail results": {
+          "description": "The input_guardrail_results and output_guardrail_results properties contain the results of the guardrails, if any. Guardrail results can sometimes contain useful information you want to log or store, so we make these available to you."
+        },
+        "Raw responses": {
+          "description": "The raw_responses property contains the ModelResponses generated by the LLM."
+        },
+        "Original input": {
+          "description": "The input property contains the original input you provided to the run method. In most cases you won't need this, but it's available in case you do."
+        }
+      }
+    },
+    "Streaming": {
+      "description": "Streaming lets you subscribe to updates of the agent run as it proceeds. This can be useful for showing the end-user progress updates and partial responses.\n\nTo stream, you can call Runner.run_streamed(), which will give you a RunResultStreaming. Calling result.stream_events() gives you an async stream of StreamEvent objects, which are described below.",
+      "Raw response events": {
+        "description": "RawResponsesStreamEvent are raw events passed directly from the LLM. They are in OpenAI Responses API format, which means each event has a type (like response.created, response.output_text.delta, etc) and data. These events are useful if you want to stream response messages to the user as soon as they are generated.",
+        "example": "For example, this will output the text generated by the LLM token-by-token."
+      },
+      "Run item events and agent events": {
+        "description": "RunItemStreamEvents are higher level events. They inform you when an item has been fully generated. This allows you to push progress updates at the level of \"message generated\", \"tool ran\", etc, instead of each token. Similarly, AgentUpdatedStreamEvent gives you updates when the current agent changes (e.g. as the result of a handoff).",
+        "example": "For example, this will ignore raw events and stream updates to the user."
+      }
+    },
+    "Tools": {
+      "description": "Tools let agents take actions: things like fetching data, running code, calling external APIs, and even using a computer. There are three classes of tools in the Agent SDK:\n\nHosted tools: these run on LLM servers alongside the AI models. OpenAI offers retrieval, web search and computer use as hosted tools.\nFunction calling: these allow you to use any Python function as a tool.\nAgents as tools: this allows you to use an agent as a tool, allowing Agents to call other agents without handing off to them.",
+      "Hosted tools": {
+        "description": "OpenAI offers a few built-in tools when using the OpenAIResponsesModel:",
+        "tools": [
+          "The WebSearchTool lets an agent search the web.",
+          "The FileSearchTool allows retrieving information from your OpenAI Vector Stores.",
+          "The ComputerTool allows automating computer use tasks."
+        ],
+        "code": "from agents import Agent, FileSearchTool, Runner, WebSearchTool\n\nagent = Agent(\n    name=\"Assistant\",\n    tools=[\n        WebSearchTool(),\n        FileSearchTool(\n            max_num_results=3,\n            vector_store_ids=[\"VECTOR_STORE_ID\"],\n        ),\n    ],\n)\n\nasync def main():\n    result = await Runner.run(agent, \"Which coffee shop should I go to, taking into account my preferences and the weather today in SF?\")\n    print(result.final_output)\n"
+      },
+      "Function tools": {
+        "description": "You can use any Python function as a tool. The Agents SDK will setup the tool automatically:\n\nThe name of the tool will be the name of the Python function (or you can provide a name)\nTool description will be taken from the docstring of the function (or you can provide a description)\nThe schema for the function inputs is automatically created from the function's arguments\nDescriptions for each input are taken from the docstring of the function, unless disabled",
+        "code": "import json\n\nfrom typing_extensions import TypedDict, Any\n\nfrom agents import Agent, FunctionTool, RunContextWrapper, function_tool\n\nclass Location(TypedDict):\n    lat: float\n    long: float\n\n@function_tool  # (1)!\nasync def fetch_weather(location: Location) -> str:\n    # (2)!\n    \"\"\"Fetch the weather for a given location.\n\n    Args:\n        location: The location to fetch the weather for.\n    \"\"\"\n    # In real life, we'd fetch the weather from a weather API\n    return \"sunny\"\n\n@function_tool(name_override=\"fetch_data\")  # (3)!\ndef read_file(ctx: RunContextWrapper[Any], path: str, directory: str | None = None) -> str:\n    \"\"\"Read the contents of a file.\n\n    Args:\n        path: The path to the file to read.\n        directory: The directory to read the file from.\n    \"\"\"\n    # In real life, we'd read the file from the file system\n    return \"<file contents>\"\n\nagent = Agent(\n    name=\"Assistant\",\n    tools=[fetch_weather, read_file],  # (4)!\n)\n\nfor tool in agent.tools:\n    if isinstance(tool, FunctionTool):\n        print(tool.name)\n        print(tool.description)\n        print(json.dumps(tool.params_json_schema, indent=2))\n        print()\n"
+      },
+      "Custom function tools": {
+        "description": "Sometimes, you don't want to use a Python function as a tool. You can directly create a FunctionTool if you prefer. You'll need to provide:\n\nname\ndescription\nparams_json_schema, which is the JSON schema for the arguments\non_invoke_tool, which is an async function that receives the context and the arguments as a JSON string, and must return the tool output as a string.",
+        "code": "from typing import Any\n\nfrom pydantic import BaseModel\n\nfrom agents import RunContextWrapper, FunctionTool\n\ndef do_some_work(data: str) -> str:\n    return \"done\"\n\nclass FunctionArgs(BaseModel):\n    username: str\n    age: int\n\nasync def run_function(ctx: RunContextWrapper[Any], args: str) -> str:\n    parsed = FunctionArgs.model_validate_json(args)\n    return do_some_work(data=f\"{parsed.username} is {parsed.age} years old\")\n\ntool = FunctionTool(\n    name=\"process_user\",\n    description=\"Processes extracted user data\",\n    params_json_schema=FunctionArgs.model_json_schema(),\n    on_invoke_tool=run_function,\n)\n"
+      },
+      "Automatic argument and docstring parsing": {
+        "description": "We automatically parse the function signature to extract the schema for the tool, and we parse the docstring to extract descriptions for the tool and for individual arguments.",
+        "notes": [
+          "The signature parsing is done via the inspect module. We use type annotations to understand the types for the arguments, and dynamically build a Pydantic model to represent the overall schema. It supports most types, including Python primitives, Pydantic models, TypedDicts, and more.",
+          "We use griffe to parse docstrings. Supported docstring formats are google, sphinx and numpy. We attempt to automatically detect the docstring format, but this is best-effort and you can explicitly set it when calling function_tool. You can also disable docstring parsing by setting use_docstring_info to False."
+        ]
+      },
+      "Agents as tools": {
+        "description": "In some workflows, you may want a central agent to orchestrate a network of specialized agents, instead of handing off control. You can do this by modeling agents as tools.",
+        "code": "from agents import Agent, Runner\nimport asyncio\n\nspanish_agent = Agent(\n    name=\"Spanish agent\",\n    instructions=\"You translate the user's message to Spanish\",\n)\n\nfrench_agent = Agent(\n    name=\"French agent\",\n    instructions=\"You translate the user's message to French\",\n)\n\norchestrator_agent = Agent(\n    name=\"orchestrator_agent\",\n    instructions=(\n        \"You are a translation agent. You use the tools given to you to translate.\"\n        \"If asked for multiple translations, you call the relevant tools.\"\n    ),\n    tools=[\n        spanish_agent.as_tool(\n            tool_name=\"translate_to_spanish\",\n            tool_description=\"Translate the user's message to Spanish\",\n        ),\n        french_agent.as_tool(\n            tool_name=\"translate_to_french\",\n            tool_description=\"Translate the user's message to French\",\n        ),\n    ],\n)\n\nasync def main():\n    result = await Runner.run(orchestrator_agent, input=\"Say 'Hello, how are you?' in Spanish.\")\n    print(result.final_output)\n"
+      },
+      "Handling errors in function tools": {
+        "description": "When you create a function tool via @function_tool, you can pass a failure_error_function. This is a function that provides an error response to the LLM in case the tool call crashes.",
+        "behaviors": [
+          "By default (i.e. if you don't pass anything), it runs a default_tool_error_function which tells the LLM an error occurred.",
+          "If you pass your own error function, it runs that instead, and sends the response to the LLM.",
+          "If you explicitly pass None, then any tool call errors will be re-raised for you to handle. This could be a ModelBehaviorError if the model produced invalid JSON, or a UserError if your code crashed, etc."
+        ],
+        "note": "If you are manually creating a FunctionTool object, then you must handle errors inside the on_invoke_tool function."
+      }
+    },
+    "Handoffs": {
+      "description": "Handoffs allow an agent to delegate tasks to another agent. This is particularly useful in scenarios where different agents specialize in distinct areas. For example, a customer support app might have agents that each specifically handle tasks like order status, refunds, FAQs, etc.\n\nHandoffs are represented as tools to the LLM. So if there's a handoff to an agent named Refund Agent, the tool would be called transfer_to_refund_agent.",
+      "Creating a handoff": {
+        "description": "All agents have a handoffs param, which can either take an Agent directly, or a Handoff object that customizes the Handoff.\n\nYou can create a handoff using the handoff() function provided by the Agents SDK. This function allows you to specify the agent to hand off to, along with optional overrides and input filters.",
+        "Basic Usage": {
+          "description": "Here's how you can create a simple handoff:",
+          "code": "from agents import Agent, handoff\n\nbilling_agent = Agent(name=\"Billing agent\")\nrefund_agent = Agent(name=\"Refund agent\")\n\n# (1)!\ntriage_agent = Agent(name=\"Triage agent\", handoffs=[billing_agent, handoff(refund_agent)])\n"
+        },
+        "Customizing handoffs via the handoff() function": {
+          "description": "The handoff() function lets you customize things.",
+          "customizations": [
+            "agent: This is the agent to which things will be handed off.",
+            "tool_name_override: By default, the Handoff.default_tool_name() function is used, which resolves to transfer_to_<agent_name>. You can override this.",
+            "tool_description_override: Override the default tool description from Handoff.default_tool_description()",
+            "on_handoff: A callback function executed when the handoff is invoked. This is useful for things like kicking off some data fetching as soon as you know a handoff is being invoked. This function receives the agent context, and can optionally also receive LLM generated input. The input data is controlled by the input_type param.",
+            "input_type: The type of input expected by the handoff (optional).",
+            "input_filter: This lets you filter the input received by the next agent. See below for more."
+          ],
+          "code": "from agents import Agent, handoff, RunContextWrapper\n\ndef on_handoff(ctx: RunContextWrapper[None]):\n    print(\"Handoff called\")\n\nagent = Agent(name=\"My agent\")\n\nhandoff_obj = handoff(\n    agent=agent,\n    on_handoff=on_handoff,\n    tool_name_override=\"custom_handoff_tool\",\n    tool_description_override=\"Custom description\",\n)\n"
+        }
+      },
+      "Handoff inputs": {
+        "description": "In certain situations, you want the LLM to provide some data when it calls a handoff. For example, imagine a handoff to an \"Escalation agent\". You might want a reason to be provided, so you can log it.",
+        "code": "from pydantic import BaseModel\n\nfrom agents import Agent, handoff, RunContextWrapper\n\nclass EscalationData(BaseModel):\n    reason: str\n\nasync def on_handoff(ctx: RunContextWrapper[None], input_data: EscalationData):\n    print(f\"Escalation agent called with reason: {input_data.reason}\")\n\nagent = Agent(name=\"Escalation agent\")\n\nhandoff_obj = handoff(\n    agent=agent,\n    on_handoff=on_handoff,\n    input_type=EscalationData,\n)\n"
+      },
+      "Input filters": {
+        "description": "When a handoff occurs, it's as though the new agent takes over the conversation, and gets to see the entire previous conversation history. If you want to change this, you can set an input_filter. An input filter is a function that receives the existing input via a HandoffInputData, and must return a new HandoffInputData.\n\nThere are some common patterns (for example removing all tool calls from the history), which are implemented for you in agents.extensions.handoff_filters",
+        "code": "from agents import Agent, handoff\nfrom agents.extensions import handoff_filters\n\nagent = Agent(name=\"FAQ agent\")\n\nhandoff_obj = handoff(\n    agent=agent,\n    input_filter=handoff_filters.remove_all_tools, # (1)!\n)\n"
+      },
+      "Recommended prompts": {
+        "description": "To make sure that LLMs understand handoffs properly, we recommend including information about handoffs in your agents. We have a suggested prefix in agents.extensions.handoff_prompt.RECOMMENDED_PROMPT_PREFIX, or you can call agents.extensions.handoff_prompt.prompt_with_handoff_instructions to automatically add recommended data to your prompts.",
+        "code": "from agents import Agent\nfrom agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX\n\nbilling_agent = Agent(\n    name=\"Billing agent\",\n    instructions=f\"\"\"{RECOMMENDED_PROMPT_PREFIX}\n    <Fill in the rest of your prompt here>.\"\"\",\n)\n"
+      }
+    },
+    "Tracing": {
+      "description": "The Agents SDK includes built-in tracing, collecting a comprehensive record of events during an agent run: LLM generations, tool calls, handoffs, guardrails, and even custom events that occur. Using the Traces dashboard, you can debug, visualize, and monitor your workflows during development and in production.",
+      "notes": [
+        "Tracing is enabled by default.",
+        "You can globally disable tracing by setting the env var OPENAI_AGENTS_DISABLE_TRACING=1",
+        "You can disable tracing for a single run by setting agents.run.RunConfig.tracing_disabled to True"
+      ],
+      "Traces and spans": {
+        "properties": [
+          "Traces represent a single end-to-end operation of a \"workflow\". They're composed of Spans. Traces have the following properties:\nworkflow_name: This is the logical workflow or app. For example \"Code generation\" or \"Customer service\".\ntrace_id: A unique ID for the trace. Automatically generated if you don't pass one. Must have the format trace_<32_alphanumeric>.\ngroup_id: Optional group ID, to link multiple traces from the same conversation. For example, you might use a chat thread ID.\ndisabled: If True, the trace will not be recorded.\nmetadata: Optional metadata for the trace.",
+          "Spans represent operations that have a start and end time. Spans have:\nstarted_at and ended_at timestamps.\ntrace_id, to represent the trace they belong to\nparent_id, which points to the parent Span of this Span (if any)\nspan_data, which is information about the Span. For example, AgentSpanData contains information about the Agent, GenerationSpanData contains information about the LLM generation, etc."
+        ]
+      },
+      "Default tracing": {
+        "description": "By default, the SDK traces the following:\n\nThe entire Runner.{run, run_sync, run_streamed}() is wrapped in a trace().\nEach time an agent runs, it is wrapped in agent_span()\nLLM generations are wrapped in generation_span()\nFunction tool calls are each wrapped in function_span()\nGuardrails are wrapped in guardrail_span()\nHandoffs are wrapped in handoff_span()"
+      },
+      "Higher level traces": {
+        "description": "Sometimes, you might want multiple calls to run() to be part of a single trace. You can do this by wrapping the entire code in a trace().",
+        "code": "from agents import Agent, Runner, trace\n\nasync def main():\n    agent = Agent(name=\"Joke generator\", instructions=\"Tell funny jokes.\")\n\n    with trace(\"Joke workflow\"): # (1)!\n        first_result = await Runner.run(agent, \"Tell me a joke\")\n        second_result = await Runner.run(agent, f\"Rate this joke: {first_result.final_output}\")\n        print(f\"Joke: {first_result.final_output}\")\n        print(f\"Rating: {second_result.final_output}\")\n"
+      },
+      "Creating traces": {
+        "description": "You can use the trace() function to create a trace. Traces need to be started and finished. You have two options to do so:\n\nRecommended: use the trace as a context manager, i.e. with trace(...) as my_trace. This will automatically start and end the trace at the right time.\nYou can also manually call trace.start() and trace.finish()."
+      },
+      "Creating spans": {
+        "description": "You can use the various *_span() methods to create a span. In general, you don't need to manually create spans. A custom_span() function is available for tracking custom span information."
+      },
+      "Sensitive data": {
+        "description": "Some spans track potentially sensitive data. For example, the generation_span() stores the inputs/outputs of the LLM generation, and function_span() stores the inputs/outputs of function calls. These may contain sensitive data, so you can disable capturing that data via RunConfig.trace_include_sensitive_data."
+      },
+      "Custom tracing processors": {
+        "description": "The high level architecture for tracing is:\n\nAt initialization, we create a global TraceProvider, which is responsible for creating traces.\nWe configure the TraceProvider with a BatchTraceProcessor that sends traces/spans in batches to a BackendSpanExporter, which exports the spans and traces to the OpenAI backend in batches.",
+        "options": [
+          "add_trace_processor() lets you add an additional trace processor that will receive traces and spans as they are ready. This lets you do your own processing in addition to sending traces to OpenAI's backend.",
+          "set_trace_processors() lets you replace the default processors with your own trace processors. This means traces will not be sent to the OpenAI backend unless you include a TracingProcessor that does so."
+        ],
+        "External trace processors include": [
+          "Braintrust",
+          "Pydantic Logfire",
+          "AgentOps",
+          "Scorecard",
+          "Keywords AI"
+        ]
+      }
+    },
+    "Context management": {
+      "description": "Context is an overloaded term. There are two main classes of context you might care about:\n\nContext available locally to your code: this is data and dependencies you might need when tool functions run, during callbacks like on_handoff, in lifecycle hooks, etc.\nContext available to LLMs: this is data the LLM sees when generating a response.",
+      "Local context": {
+        "description": "This is represented via the RunContextWrapper class and the context property within it.",
+        "data flow": [
+          "You create any Python object you want. A common pattern is to use a dataclass or a Pydantic object.",
+          "You pass that object to the various run methods (e.g. Runner.run(..., **context=whatever**)).",
+          "All your tool calls, lifecycle hooks etc will be passed a wrapper object, RunContextWrapper[T], where T represents your context object type which you can access via wrapper.context."
+        ],
+        "note": "The most important thing to be aware of: every agent, tool function, lifecycle etc for a given agent run must use the same type of context.\n\nThe context object is not sent to the LLM. It is purely a local object that you can read from, write to and call methods on it.",
+        "example": "You can use the context for things like:\n\nContextual data for your run (e.g. things like a username/uid or other information about the user)\nDependencies (e.g. logger objects, data fetchers, etc)\nHelper functions",
+        "code": "import asyncio\nfrom dataclasses import dataclass\n\nfrom agents import Agent, RunContextWrapper, Runner, function_tool\n\n@dataclass\nclass UserInfo:  # (1)!\n    name: str\n    uid: int\n\n@function_tool\nasync def fetch_user_age(wrapper: RunContextWrapper[UserInfo]) -> str:  # (2)!\n    return f\"User {wrapper.context.name} is 47 years old\"\n\nasync def main():\n    user_info = UserInfo(name=\"John\", uid=123)  # (3)!\n\n    agent = Agent[UserInfo](  # (4)!\n        name=\"Assistant\",\n        tools=[fetch_user_age],\n    )\n\n    result = await Runner.run(\n        starting_agent=agent

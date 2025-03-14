@@ -1,0 +1,256 @@
+{
+  "External trace processors include": [
+          "Braintrust",
+          "Pydantic Logfire",
+          "AgentOps",
+          "Scorecard",
+          "Keywords AI"
+        ]
+      },
+      "Function schema": {
+        "description": "Given a python function, extracts a FuncSchema from it, capturing the name, description,\nparameter descriptions, and other metadata.",
+        "parameters": [
+          "func: The function to extract the schema from.",
+          "docstring_style: The style of the docstring to use for parsing. If not provided, we will\nattempt to auto-detect the style.",
+          "name_override: If provided, use this name instead of the function's __name__.",
+          "description_override: If provided, use this description instead of the one derived from the\ndocstring.",
+          "use_docstring_info: If True, uses the docstring to generate the description and parameter\ndescriptions.",
+          "strict_json_schema: Whether the JSON schema is in strict mode. If True, we'll ensure that\nthe schema adheres to the \"strict\" standard the OpenAI API expects. We **strongly**\nrecommend setting this to True, as it increases the likelihood of the LLM providing\ncorrect JSON input."
+        ]
+      },
+      "Handoffs": {
+        "description": "All agents have a handoffs param, which can either take an Agent directly, or a Handoff object that customizes the Handoff.\nYou can create a handoff using the handoff() function provided by the Agents SDK. This function allows you to specify the agent to hand off to, along with optional overrides and input filters.",
+        "Basic Usage": {
+          "description": "Here's how you can create a simple handoff:",
+          "code": "from agents import Agent, handoff\n\nbilling_agent = Agent(name=\"Billing agent\")\nrefund_agent = Agent(name=\"Refund agent\")\n\n# (1)!\ntriage_agent = Agent(name=\"Triage agent\", handoffs=[billing_agent, handoff(refund_agent)])\n"
+        },
+        "Customizing handoffs via the handoff() function": {
+          "description": "The handoff() function lets you customize things.",
+          "customizations": [
+            "agent: This is the agent to which things will be handed off.",
+            "tool_name_override: By default, the Handoff.default_tool_name() function is used, which resolves to transfer_to_<agent_name>. You can override this.",
+            "tool_description_override: Override the default tool description from Handoff.default_tool_description()",
+            "on_handoff: A callback function executed when the handoff is invoked. This is useful for things like kicking off some data fetching as soon as you know a handoff is being invoked. This function receives the agent context, and can optionally also receive LLM generated input. The input data is controlled by the input_type param.",
+            "input_type: The type of input expected by the handoff (optional).",
+            "input_filter: This lets you filter the input received by the next agent. See below for more."
+          ],
+          "code": "from agents import Agent, handoff, RunContextWrapper\n\ndef on_handoff(ctx: RunContextWrapper[None]):\n    print(\"Handoff called\")\n\nagent = Agent(name=\"My agent\")\n\nhandoff_obj = handoff(\n    agent=agent,\n    on_handoff=on_handoff,\n    tool_name_override=\"custom_handoff_tool\",\n    tool_description_override=\"Custom description\",\n)\n"
+        }
+      },
+      "Handoff inputs": {
+        "description": "In certain situations, you want the LLM to provide some data when it calls a handoff. For example, imagine a handoff to an \"Escalation agent\". You might want a reason to be provided, so you can log it.",
+        "code": "from pydantic import BaseModel\n\nfrom agents import Agent, handoff, RunContextWrapper\n\nclass EscalationData(BaseModel):\n    reason: str\n\nasync def on_handoff(ctx: RunContextWrapper[None], input_data: EscalationData):\n    print(f\"Escalation agent called with reason: {input_data.reason}\")\n\nagent = Agent(name=\"Escalation agent\")\n\nhandoff_obj = handoff(\n    agent=agent,\n    on_handoff=on_handoff,\n    input_type=EscalationData,\n)\n"
+      },
+      "Input filters": {
+        "description": "When a handoff occurs, it's as though the new agent takes over the conversation, and gets to see the entire previous conversation history. If you want to change this, you can set an input_filter. An input filter is a function that receives the existing input via a HandoffInputData, and must return a new HandoffInputData.\n\nThere are some common patterns (for example removing all tool calls from the history), which are implemented for you in agents.extensions.handoff_filters",
+        "code": "from agents import Agent, handoff\nfrom agents.extensions import handoff_filters\n\nagent = Agent(name=\"FAQ agent\")\n\nhandoff_obj = handoff(\n    agent=agent,\n    input_filter=handoff_filters.remove_all_tools, # (1)!\n)\n"
+      },
+      "Recommended prompts": {
+        "description": "To make sure that LLMs understand handoffs properly, we recommend including information about handoffs in your agents. We have a suggested prefix in agents.extensions.handoff_prompt.RECOMMENDED_PROMPT_PREFIX, or you can call agents.extensions.handoff_prompt.prompt_with_handoff_instructions to automatically add recommended data to your prompts.",
+        "code": "from agents import Agent\nfrom agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX\n\nbilling_agent = Agent(\n    name=\"Billing agent\",\n    instructions=f\"\"\"{RECOMMENDED_PROMPT_PREFIX}\n    <Fill in the rest of your prompt here>.\"\"\",\n)\n"
+      }
+    },
+    "Tracing": {
+      "description": "The Agents SDK includes built-in tracing, collecting a comprehensive record of events during an agent run: LLM generations, tool calls, handoffs, guardrails, and even custom events that occur. Using the Traces dashboard, you can debug, visualize, and monitor your workflows during development and in production.",
+      "notes": [
+        "Tracing is enabled by default.",
+        "You can globally disable tracing by setting the env var OPENAI_AGENTS_DISABLE_TRACING=1",
+        "You can disable tracing for a single run by setting agents.run.RunConfig.tracing_disabled to True"
+      ],
+      "Traces and spans": {
+        "properties": [
+          "Traces represent a single end-to-end operation of a \"workflow\". They're composed of Spans. Traces have the following properties:\nworkflow_name: This is the logical workflow or app. For example \"Code generation\" or \"Customer service\".\ntrace_id: A unique ID for the trace. Automatically generated if you don't pass one. Must have the format trace_<32_alphanumeric>.\ngroup_id: Optional group ID, to link multiple traces from the same conversation. For example, you might use a chat thread ID.\ndisabled: If True, the trace will not be recorded.\nmetadata: Optional metadata for the trace.",
+          "Spans represent operations that have a start and end time. Spans have:\nstarted_at and ended_at timestamps.\ntrace_id, to represent the trace they belong to\nparent_id, which points to the parent Span of this Span (if any)\nspan_data, which is information about the Span. For example, AgentSpanData contains information about the Agent, GenerationSpanData contains information about the LLM generation, etc."
+        ]
+      },
+      "Default tracing": {
+        "description": "By default, the SDK traces the following:\n\nThe entire Runner.{run, run_sync, run_streamed}() is wrapped in a trace().\nEach time an agent runs, it is wrapped in agent_span()\nLLM generations are wrapped in generation_span()\nFunction tool calls are each wrapped in function_span()\nGuardrails are wrapped in guardrail_span()\nHandoffs are wrapped in handoff_span()"
+      },
+      "Higher level traces": {
+        "description": "Sometimes, you might want multiple calls to run() to be part of a single trace. You can do this by wrapping the entire code in a trace().",
+        "code": "from agents import Agent, Runner, trace\n\nasync def main():\n    agent = Agent(name=\"Joke generator\", instructions=\"Tell funny jokes.\")\n\n    with trace(\"Joke workflow\"): # (1)!\n        first_result = await Runner.run(agent, \"Tell me a joke\")\n        second_result = await Runner.run(agent, f\"Rate this joke: {first_result.final_output}\")\n        print(f\"Joke: {first_result.final_output}\")\n        print(f\"Rating: {second_result.final_output}\")\n"
+      },
+      "Creating traces": {
+        "description": "You can use the trace() function to create a trace. Traces need to be started and finished. You have two options to do so:\n\nRecommended: use the trace as a context manager, i.e. with trace(...) as my_trace. This will automatically start and end the trace at the right time.\nYou can also manually call trace.start() and trace.finish()."
+      },
+      "Creating spans": {
+        "description": "You can use the various *_span() methods to create a span. In general, you don't need to manually create spans. A custom_span() function is available for tracking custom span information."
+      },
+      "Sensitive data": {
+        "description": "Some spans track potentially sensitive data. For example, the generation_span() stores the inputs/outputs of the LLM generation, and function_span() stores the inputs/outputs of function calls. These may contain sensitive data, so you can disable capturing that data via RunConfig.trace_include_sensitive_data."
+      },
+      "Custom tracing processors": {
+        "description": "The high level architecture for tracing is:\n\nAt initialization, we create a global TraceProvider, which is responsible for creating traces.\nWe configure the TraceProvider with a BatchTraceProcessor that sends traces/spans in batches to a BackendSpanExporter, which exports the spans and traces to the OpenAI backend in batches.",
+        "options": [
+          "add_trace_processor() lets you add an additional trace processor that will receive traces and spans as they are ready. This lets you do your own processing in addition to sending traces to OpenAI's backend.",
+          "set_trace_processors() lets you replace the default processors with your own trace processors. This means traces will not be sent to the OpenAI backend unless you include a TracingProcessor that does so."
+        ],
+        "External trace processors include": [
+          "Braintrust",
+          "Pydantic Logfire",
+          "AgentOps",
+          "Scorecard",
+          "Keywords AI"
+        ]
+      },
+      "Function schema": {
+        "description": "Given a python function, extracts a FuncSchema from it, capturing the name, description,\nparameter descriptions, and other metadata.",
+        "parameters": [
+          "func: The function to extract the schema from.",
+          "docstring_style: The style of the docstring to use for parsing. If not provided, we will\nattempt to auto-detect the style.",
+          "name_override: If provided, use this name instead of the function's __name__.",
+          "description_override: If provided, use this description instead of the one derived from the\ndocstring.",
+          "use_docstring_info: If True, uses the docstring to generate the description and parameter\ndescriptions.",
+          "strict_json_schema: Whether the JSON schema is in strict mode. If True, we'll ensure that\nthe schema adheres to the \"strict\" standard the OpenAI API expects. We **strongly**\nrecommend setting this to True, as it increases the likelihood of the LLM providing\ncorrect JSON input."
+        ]
+      },
+      "Handoffs": {
+        "description": "All agents have a handoffs param, which can either take an Agent directly, or a Handoff object that customizes the Handoff.\nYou can create a handoff using the handoff() function provided by the Agents SDK. This function allows you to specify the agent to hand off to, along with optional overrides and input filters.",
+        "Basic Usage": {
+          "description": "Here's how you can create a simple handoff:",
+          "code": "from agents import Agent, handoff\n\nbilling_agent = Agent(name=\"Billing agent\")\nrefund_agent = Agent(name=\"Refund agent\")\n\n# (1)!\ntriage_agent = Agent(name=\"Triage agent\", handoffs=[billing_agent, handoff(refund_agent)])\n"
+        },
+        "Customizing handoffs via the handoff() function": {
+          "description": "The handoff() function lets you customize things.",
+          "customizations": [
+            "agent: This is the agent to which things will be handed off.",
+            "tool_name_override: By default, the Handoff.default_tool_name() function is used, which resolves to transfer_to_<agent_name>. You can override this.",
+            "tool_description_override: Override the default tool description from Handoff.default_tool_description()",
+            "on_handoff: A callback function executed when the handoff is invoked. This is useful for things like kicking off some data fetching as soon as you know a handoff is being invoked. This function receives the agent context, and can optionally also receive LLM generated input. The input data is controlled by the input_type param.",
+            "input_type: The type of input expected by the handoff (optional).",
+            "input_filter: This lets you filter the input received by the next agent. See below for more."
+          ],
+          "code": "from agents import Agent, handoff, RunContextWrapper\n\ndef on_handoff(ctx: RunContextWrapper[None]):\n    print(\"Handoff called\")\n\nagent = Agent(name=\"My agent\")\n\nhandoff_obj = handoff(\n    agent=agent,\n    on_handoff=on_handoff,\n    tool_name_override=\"custom_handoff_tool\",\n    tool_description_override=\"Custom description\",\n)\n"
+        }
+      },
+      "Handoff inputs": {
+        "description": "In certain situations, you want the LLM to provide some data when it calls a handoff. For example, imagine a handoff to an \"Escalation agent\". You might want a reason to be provided, so you can log it.",
+        "code": "from pydantic import BaseModel\n\nfrom agents import Agent, handoff, RunContextWrapper\n\nclass EscalationData(BaseModel):\n    reason: str\n\nasync def on_handoff(ctx: RunContextWrapper[None], input_data: EscalationData):\n    print(f\"Escalation agent called with reason: {input_data.reason}\")\n\nagent = Agent(name=\"Escalation agent\")\n\nhandoff_obj = handoff(\n    agent=agent,\n    on_handoff=on_handoff,\n    input_type=EscalationData,\n)\n"
+      },
+      "Input filters": {
+        "description": "When a handoff occurs, it's as though the new agent takes over the conversation, and gets to see the entire previous conversation history. If you want to change this, you can set an input_filter. An input filter is a function that receives the existing input via a HandoffInputData, and must return a new HandoffInputData.\n\nThere are some common patterns (for example removing all tool calls from the history), which are implemented for you in agents.extensions.handoff_filters",
+        "code": "from agents import Agent, handoff\nfrom agents.extensions import handoff_filters\n\nagent = Agent(name=\"FAQ agent\")\n\nhandoff_obj = handoff(\n    agent=agent,\n    input_filter=handoff_filters.remove_all_tools, # (1)!\n)\n"
+      },
+      "Recommended prompts": {
+        "description": "To make sure that LLMs understand handoffs properly, we recommend including information about handoffs in your agents. We have a suggested prefix in agents.extensions.handoff_prompt.RECOMMENDED_PROMPT_PREFIX, or you can call agents.extensions.handoff_prompt.prompt_with_handoff_instructions to automatically add recommended data to your prompts.",
+        "code": "from agents import Agent\nfrom agents.extensions.handoff_prompt import RECOMMENDED_PROMPT_PREFIX\n\nbilling_agent = Agent(\n    name=\"Billing agent\",\n    instructions=f\"\"\"{RECOMMENDED_PROMPT_PREFIX}\n    <Fill in the rest of your prompt here>.\"\"\",\n)\n"
+      }
+    },
+    "Context management": {
+      "description": "Context is an overloaded term. There are two main classes of context you might care about:\n\nContext available locally to your code: this is data and dependencies you might need when tool functions run, during callbacks like on_handoff, in lifecycle hooks, etc.\nContext available to LLMs: this is data the LLM sees when generating a response.",
+      "Local context": {
+        "description": "This is represented via the RunContextWrapper class and the context property within it.",
+        "data flow": [
+          "You create any Python object you want. A common pattern is to use a dataclass or a Pydantic object.",
+          "You pass that object to the various run methods (e.g. Runner.run(..., **context=whatever**)).",
+          "All your tool calls, lifecycle hooks etc will be passed a wrapper object, RunContextWrapper[T], where T represents your context object type which you can access via wrapper.context."
+        ],
+        "note": "The most important thing to be aware of: every agent, tool function, lifecycle etc for a given agent run must use the same type of context.\n\nThe context object is not sent to the LLM. It is purely a local object that you can read from, write to and call methods on it.",
+        "example": "You can use the context for things like:\n\nContextual data for your run (e.g. things like a username/uid or other information about the user)\nDependencies (e.g. logger objects, data fetchers, etc)\nHelper functions",
+        "code": "import asyncio\nfrom dataclasses import dataclass\n\nfrom agents import Agent, RunContextWrapper, Runner, function_tool\n\n@dataclass\nclass UserInfo:  # (1)!\n    name: str\n    uid: int\n\n@function_tool\nasync def fetch_user_age(wrapper: RunContextWrapper[UserInfo]) -> str:  # (2)!\n    return f\"User {wrapper.context.name} is 47 years old\"\n\nasync def main():\n    user_info = UserInfo(name=\"John\", uid=123)  # (3)!\n\n    agent = Agent[UserInfo](  # (4)!\n        name=\"Assistant\",\n        tools=[fetch_user_age],\n    )\n\n    result = await Runner.run(\n        starting_agent=agent,\n        input=\"What is the age of the user?\",\n        context=user_info,\n    )\n\n    print(result.final_output)  # (5)!\n    # The user John is 47 years old.\n\nif __name__ == \"__main__\":\n    asyncio.run(main())\n"
+        },
+        "Agent/LLM context": {
+          "description": "When an LLM is called, the only data it can see is from the conversation history. This means that if you want to make some new data available to the LLM, you must do it in a way that makes it available in that history. There are a few ways to do this:",
+          "methods": [
+            "You can add it to the Agent instructions. This is also known as a \"system prompt\" or \"developer message\". System prompts can be static strings, or they can be dynamic functions that receive the context and output a string. This is a common tactic for information that is always useful (for example, the user's name or the current date).",
+            "Add it to the input when calling the Runner.run functions. This is similar to the instructions tactic, but allows you to have messages that are lower in the chain of command.",
+            "Expose it via function tools. This is useful for on-demand context - the LLM decides when it needs some data, and can call the tool to fetch that data.",
+            "Use retrieval or web search. These are special tools that are able to fetch relevant data from files or databases (retrieval), or from the web (web search). This is useful for \"grounding\" the response in relevant contextual data."
+          ]
+        }
+      },
+      "Guardrails": {
+        "description": "Guardrails run in parallel to your agents, enabling you to do checks and validations of user input. For example, imagine you have an agent that uses a very smart (and hence slow/expensive) model to help with customer requests. You wouldn't want malicious users to ask the model to help them with their math homework. So, you can run a guardrail with a fast/cheap model. If the guardrail detects malicious usage, it can immediately raise an error, which stops the expensive model from running and saves you time/money.",
+        "guardrail types": [
+          "Input guardrails run on the initial user input",
+          "Output guardrails run on the final agent output"
+        ],
+        "Input guardrails": {
+          "description": "Input guardrails run in 3 steps:\n\nFirst, the guardrail receives the same input passed to the agent.\nNext, the guardrail function runs to produce a GuardrailFunctionOutput, which is then wrapped in an InputGuardrailResult\nFinally, we check if .tripwire_triggered is true. If true, an InputGuardrailTripwireTriggered exception is raised, so you can appropriately respond to the user or handle the exception."
+        },
+        "Output guardrails": {
+          "description": "Output guardrails run in 3 steps:\n\nFirst, the guardrail receives the same input passed to the agent.\nNext, the guardrail function runs to produce a GuardrailFunctionOutput, which is then wrapped in an OutputGuardrailResult\nFinally, we check if .tripwire_triggered is true. If true, an OutputGuardrailTripwireTriggered exception is raised, so you can appropriately respond to the user or handle the exception."
+        },
+        "Tripwires": {
+          "description": "If the input or output fails the guardrail, the Guardrail can signal this with a tripwire. As soon as we see a guardrail that has triggered the tripwires, we immediately raise a {Input,Output}GuardrailTripwireTriggered exception and halt the Agent execution."
+        },
+        "Implementing a guardrail": {
+          "description": "You need to provide a function that receives input, and returns a GuardrailFunctionOutput. In this example, we'll do this by running an Agent under the hood.",
+          "code": "from pydantic import BaseModel\nfrom agents import (\n    Agent,\n    GuardrailFunctionOutput,\n    InputGuardrailTripwireTriggered,\n    RunContextWrapper,\n    Runner,\n    TResponseInputItem,\n    input_guardrail,\n)\n\nclass MathHomeworkOutput(BaseModel):\n    is_math_homework: bool\n    reasoning: str\n\nguardrail_agent = Agent( # (1)!\n    name=\"Guardrail check\",\n    instructions=\"Check if the user is asking you to do their math homework.\",\n    output_type=MathHomeworkOutput,\n)\n\n@input_guardrail\nasync def math_guardrail( # (2)!\n    ctx: RunContextWrapper[None], agent: Agent, input: str | list[TResponseInputItem]\n) -> GuardrailFunctionOutput:\n    result = await Runner.run(guardrail_agent, input, context=ctx.context)\n\n    return GuardrailFunctionOutput(\n        output_info=result.final_output, # (3)!\n        tripwire_triggered=result.final_output.is_math_homework,\n    )\n\nagent = Agent(  # (4)!\n    name=\"Customer support agent\",\n    instructions=\"You are a customer support agent. You help customers with their questions.\",\n    input_guardrails=[math_guardrail],\n)\n\nasync def main():\n    # This should trip the guardrail\n    try:\n        await Runner.run(agent, \"Hello, can you help me solve for x: 2x + 3 = 11?\")\n        print(\"Guardrail didn't trip - this is unexpected\")\n\n    except InputGuardrailTripwireTriggered:\n        print(\"Math homework guardrail tripped\")\n"
+        }
+      },
+      "Orchestrating multiple agents": {
+        "description": "Orchestration refers to the flow of agents in your app. Which agents run, in what order, and how do they decide what happens next? There are two main ways to orchestrate agents:\n\nAllowing the LLM to make decisions: this uses the intelligence of an LLM to plan, reason, and decide on what steps to take based on that.\nOrchestrating via code: determining the flow of agents via your code.",
+        "note": "You can mix and match these patterns. Each has their own tradeoffs, described below.",
+        "Orchestrating via LLM": {
+          "description": "This pattern is great when the task is open-ended and you want to rely on the intelligence of an LLM.",
+          "tactics": [
+            "Invest in good prompts. Make it clear what tools are available, how to use them, and what parameters it must operate within.",
+            "Monitor your app and iterate on it. See where things go wrong, and iterate on your prompts.",
+            "Allow the agent to introspect and improve. For example, run it in a loop, and let it critique itself; or, provide error messages and let it improve.",
+            "Have specialized agents that excel in one task, rather than having a general purpose agent that is expected to be good at anything.",
+            "Invest in evals. This lets you train your agents to improve and get better at tasks."
+          ]
+        },
+        "Orchestrating via code": {
+          "description": "orchestrating via code makes tasks more deterministic and predictable, in terms of speed, cost and performance. Common patterns here are:",
+          "patterns": [
+            "Using structured outputs to generate well formed data that you can inspect with your code. For example, you might ask an agent to classify the task into a few categories, and then pick the next agent based on the category.",
+            "Chaining multiple agents by transforming the output of one into the input of the next. You can decompose a task like writing a blog post into a series of steps - do research, write an outline, write the blog post, critique it, and then improve it.",
+            "Running the agent that performs the task in a while loop with an agent that evaluates and provides feedback, until the evaluator says the output passes certain criteria.",
+            "Running multiple agents in parallel, e.g. via Python primitives like asyncio.gather. This is useful for speed when you have multiple tasks that don't depend on each other."
+          ]
+        }
+      },
+      "Models": {
+        "description": "The Agents SDK comes with out-of-the-box support for OpenAI models in two flavors:\n\nRecommended: the OpenAIResponsesModel, which calls OpenAI APIs using the new Responses API.\nThe OpenAIChatCompletionsModel, which calls OpenAI APIs using the Chat Completions API.",
+        "Mixing and matching models": {
+          "description": "Within a single workflow, you may want to use different models for each agent. For example, you could use a smaller, faster model for triage, while using a larger, more capable model for complex tasks.",
+          "selecting a specific model": [
+            "Passing the name of an OpenAI model.",
+            "Passing any model name + a ModelProvider that can map that name to a Model instance.",
+            "Directly providing a Model implementation."
+          ],
+          "warning": "While our SDK supports both the OpenAIResponsesModel and the OpenAIChatCompletionsModel shapes, we recommend using a single model shape for each workflow because the two shapes support a different set of features and tools. If your workflow requires mixing and matching model shapes, make sure that all the features you're using are available on both.",
+          "code": "from agents import Agent, Runner, AsyncOpenAI, OpenAIChatCompletionsModel\nimport asyncio\n\nspanish_agent = Agent(\n    name=\"Spanish agent\",\n    instructions=\"You only speak Spanish.\",\n    model=\"o3-mini\", # (1)!\n)\n\nenglish_agent = Agent(\n    name=\"English agent\",\n    instructions=\"You only speak English\",\n    model=OpenAIChatCompletionsModel( # (2)!\n        model=\"gpt-4o\",\n        openai_client=AsyncOpenAI()\n    ),\n)\n\ntriage_agent = Agent(\n    name=\"Triage agent\",\n    instructions=\"Handoff to the appropriate agent based on the language of the request.\",\n    handoffs=[spanish_agent, english_agent],\n    model=\"gpt-3.5-turbo\",\n)\n\nasync def main():\n    result = await Runner.run(triage_agent, input=\"Hola, ¿cómo estás?\")\n    print(result.final_output)\n"
+          
+        }
+      }
+    },
+    "Function schema": {
+      "description": "Given a python function, extracts a FuncSchema from it, capturing the name, description,\nparameter descriptions, and other metadata.",
+      "parameters": [
+        "func: The function to extract the schema from.",
+        "docstring_style: The style of the docstring to use for parsing. If not provided, we will\nattempt to auto-detect the style.",
+        "name_override: If provided, use this name instead of the function's __name__.",
+        "description_override: If provided, use this description instead of the one derived from the\ndocstring.",
+        "use_docstring_info: If True, uses the docstring to generate the description and parameter\ndescriptions.",
+        "strict_json_schema: Whether the JSON schema is in strict mode. If True, we'll ensure that\nthe schema adheres to the \"strict\" standard the OpenAI API expects. We **strongly**\nrecommend setting this to True, as it increases the likelihood of the LLM providing\ncorrect JSON input."
+      ]
+    },
+    "Handoffs": {
+      "description": "All agents have a handoffs param, which can either take an Agent directly, or a Handoff object that customizes the Handoff.\nYou can create a handoff using the handoff() function provided by the Agents SDK. This function allows you to specify the agent to hand off to, along with optional overrides and input filters.",
+      "Basic Usage": {
+        "description": "Here's how you can create a simple handoff:",
+        "code": "from agents import Agent, handoff\n\nbilling_agent = Agent(name=\"Billing agent\")\nrefund_agent = Agent(name=\"Refund agent\")\n\n# (1)!\ntriage_agent = Agent(name=\"Triage agent\", handoffs=[billing_agent, handoff(refund_agent)])\n"
+      },
+      "Customizing handoffs via the handoff() function": {
+        "description": "The handoff() function lets you customize things.",
+        "customizations": [
+          "agent: This is the agent to which things will be handed off.",
+          "tool_name_override: By default, the Handoff.default_tool_name() function is used, which resolves to transfer_to_<agent_name>. You can override this.",
+          "tool_description_override: Override the default tool description from Handoff.default_tool_description()",
+          "on_handoff: A callback function executed when the handoff is invoked. This is useful for things like kicking off some data fetching as soon as you know a handoff is being invoked. This function receives the agent context, and can optionally also receive LLM generated input. The input data is controlled by the input_type param.",
+          "input_type: The type of input expected by the handoff (optional).",
+          "input_filter: This lets you filter the input received by the next agent. See below for more."
+        ],
+        "code": "from agents import Agent, handoff, RunContextWrapper\n\ndef on_handoff(ctx: RunContextWrapper[None]):\n    print(\"Handoff called\")\n\nagent = Agent(name=\"My agent\")\n\nhandoff_obj = handoff(\n    agent=agent,\n    on_handoff=on_handoff,\n    tool_name_override=\"custom_handoff_tool\",\n    tool_description_override=\"Custom description\",\n)\n"
+        }
+      },
+      "Handoff inputs": {
+        "description": "In certain situations, you want the LLM to provide some data when it calls a handoff. For example, imagine a handoff to an \"Escalation agent\". You might want a reason to be provided, so you can log it.",
+        "code": "from pydantic import BaseModel\n\nfrom agents import Agent, handoff, RunContextWrapper\n\nclass EscalationData(BaseModel):\n    reason: str\n\nasync def on_handoff(ctx: RunContextWrapper[None], input_data: EscalationData):\n    print(f\"Escalation agent called with reason: {input_data.reason}\")\n\nagent = Agent(name=\"Escalation agent\")\n\nhandoff_obj = handoff(\n    agent=agent,\n    on_handoff=on_handoff,\n    input_type=EscalationData,\n)\n"
+      },
+      "Input filters": {
+        "description": "When a handoff occurs, it's as though the new agent takes over the conversation, and gets to see the entire previous conversation history. If you want to change this, you can set an input_filter. An input filter is a function that receives the existing input via a HandoffInputData, and must return a new HandoffInputData.\n\nThere are some common patterns (for example removing all tool calls from the history), which are implemented for you in agents.extensions.handoff_filters",
+        "code": "from agents import Agent, handoff\nfrom agents.extensions import handoff_filters\n\nagent = Agent(

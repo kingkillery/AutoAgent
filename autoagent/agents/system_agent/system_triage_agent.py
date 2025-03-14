@@ -4,6 +4,8 @@ from .websurfer_agent import get_websurfer_agent
 from autoagent.registry import register_agent
 from autoagent.types import Agent, Result
 from autoagent.tools.inner import case_resolved, case_not_resolved
+from autoagent.environment.browser_env import BrowserEnv
+import os
 
 @register_agent(name = "System Triage Agent", func_name="get_system_triage_agent")
 def get_system_triage_agent(model: str, **kwargs):
@@ -26,7 +28,7 @@ There are three agents you can transfer to:
 2. use `transfer_to_websurfer_agent` to transfer to {websurfer_agent.name}, it can help you to open any website and browse any content on it.
 3. use `transfer_to_coding_agent` to transfer to {coding_agent.name}, it can help you to write code to solve the user's request, especially some complex tasks.
 """
-    tool_choice = "required" 
+    tool_choice = "auto" 
     system_triage_agent = Agent(
         name="System Triage Agent",
         model=model, 
@@ -41,16 +43,37 @@ There are three agents you can transfer to:
             sub_task_description: The detailed description of the sub-task that the `System Triage Agent` will ask the `File Surfer Agent` to do.
         """
         return Result(value=sub_task_description, agent=filesurfer_agent)
+    
     def transfer_to_websurfer_agent(sub_task_description: str):
-        return Result(value=sub_task_description, agent=websurfer_agent)
+        """
+        Args:
+            sub_task_description: The detailed description of the sub-task that the `System Triage Agent` will ask the `Web Surfer Agent` to do.
+        """
+        # Ensure local_root exists and is valid
+        local_root = os.path.expanduser("~")
+        workplace_name = "browser_workplace"
+        
+        # Pass these values in context variables instead of directly creating BrowserEnv
+        # This lets the WebSurfer tools handle the creation with proper error handling
+        return Result(
+            value=f"Transferred to WebSurfer Agent to handle: {sub_task_description}",
+            agent=websurfer_agent,
+            context_variables={
+                "local_root": local_root,
+                "workplace_name": workplace_name
+            }
+        )
+    
     def transfer_to_coding_agent(sub_task_description: str):
         return Result(value=sub_task_description, agent=coding_agent)
+    
     def transfer_back_to_triage_agent(task_status: str):
         """
         Args:
             task_status: The detailed description of the task status after a sub-agent has finished its sub-task. A sub-agent can use this tool to transfer the conversation back to the `System Triage Agent` only when it has finished its sub-task.
         """
         return Result(value=task_status, agent=system_triage_agent)
+    
     system_triage_agent.agent_teams = {
         filesurfer_agent.name: transfer_to_filesurfer_agent,
         websurfer_agent.name: transfer_to_websurfer_agent,
@@ -62,4 +85,3 @@ There are three agents you can transfer to:
     coding_agent.functions.append(transfer_back_to_triage_agent)
     return system_triage_agent
 
-    
